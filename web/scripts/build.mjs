@@ -30,6 +30,6 @@ export async function buildWeb({ source, output, backend = '' }) {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
   const root = fileURLToPath(new URL('../', import.meta.url));
-  await buildWeb({ source: path.join(root, 'server/static'), output: path.join(root, 'web-dist'), backend: process.env.STUDIO_BACKEND_URL || '' });
-  console.log('Static frontend built in web-dist. Rendering backend and credentials are excluded.');
+  await buildWeb({ source: path.join(root, 'src'), output: path.join(root, 'dist'), backend: process.env.STUDIO_BACKEND_URL || '' });
+  console.log('Static frontend built in dist. Rendering backend and credentials are excluded.');
 }

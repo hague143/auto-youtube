@@ -8,5 +8,6 @@ server/data/
 artifacts/
 *.pyc
 web-dist/
+web/dist/
 node_modules/
 .vercel/

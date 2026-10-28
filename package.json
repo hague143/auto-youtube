@@ -4,7 +4,7 @@
   "private": true,
   "engines": { "node": "24.x" },
   "scripts": {
-    "build": "node scripts/build_web.mjs",
-    "test:build": "node --test scripts/build_web.test.mjs"
+    "build": "npm --prefix web run build",
+    "test:build": "npm --prefix web run test:build"
   }
 }

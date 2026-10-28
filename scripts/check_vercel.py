@@ -15,7 +15,7 @@ class QuietHandler(SimpleHTTPRequestHandler):
         pass
 
 
-server = ThreadingHTTPServer(('127.0.0.1', 0), partial(QuietHandler, directory=str(ROOT / 'web-dist')))
+server = ThreadingHTTPServer(('127.0.0.1', 0), partial(QuietHandler, directory=str(ROOT / 'web' / 'dist')))
 thread = threading.Thread(target=server.serve_forever, daemon=True)
 thread.start()
 origin = 'http://127.0.0.1:' + str(server.server_port)

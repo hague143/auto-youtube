@@ -1,0 +1,12 @@
+# Build only the required backend and shared frontend sources.
+**
+!server/
+!server/Dockerfile
+!server/requirements.txt
+!server/main.py
+!server/pipeline.py
+!web/
+!web/src/
+!web/src/**
+**/.env
+**/.env.*

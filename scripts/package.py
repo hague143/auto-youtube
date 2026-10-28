@@ -9,11 +9,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 OUTPUT = ROOT / 'artifacts'
 OUTPUT.mkdir(exist_ok=True)
-allowed = ['.env.example', '.gitignore', 'Caddyfile', 'Caddyfile.ip', 'compose.yaml', 'compose.ip-https.yaml', 'README.md', 'requirements-dev.txt', 'package.json', 'package-lock.json', 'vercel.json']
-for directory in ('server', 'scripts', 'docs'):
+allowed = ['.env.example', '.gitignore', '.dockerignore', 'Caddyfile', 'Caddyfile.ip', 'compose.yaml', 'compose.ip-https.yaml', 'README.md', 'requirements-dev.txt', 'package.json', 'package-lock.json', 'vercel.json']
+for directory in ('server', 'scripts', 'docs', 'web'):
     for path in (ROOT / directory).rglob('*'):
-        if path.is_file() and not any(part in ('__pycache__', 'data', '.venv', '.pytest_cache') for part in path.relative_to(ROOT).parts):
-            if path.suffix in ('.py', '.txt', '.md', '.sh', '.html', '.js', '.mjs', '.css', '.woff2') or path.name in ('Dockerfile', '.dockerignore'):
+        if path.is_file() and not any(part in ('__pycache__', 'data', '.venv', '.pytest_cache', 'dist', 'node_modules', '.vercel') for part in path.relative_to(ROOT).parts):
+            if path.suffix in ('.py', '.txt', '.md', '.sh', '.html', '.js', '.mjs', '.json', '.css', '.woff2') or path.name in ('Dockerfile', '.dockerignore'):
                 allowed.append(path.relative_to(ROOT).as_posix())
 buffer = io.BytesIO()
 with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
@@ -38,7 +38,7 @@ digest = hashlib.sha256(payload).hexdigest()
 runtime = io.BytesIO()
 with zipfile.ZipFile(io.BytesIO(payload)) as source, zipfile.ZipFile(runtime, 'w', zipfile.ZIP_DEFLATED, compresslevel=9) as target:
     for name in source.namelist():
-        if name in ('compose.yaml', 'compose.ip-https.yaml', 'Caddyfile', 'Caddyfile.ip', '.env.example') or (name.startswith('server/') and '/tests/' not in name):
+        if name in ('compose.yaml', 'compose.ip-https.yaml', 'Caddyfile', 'Caddyfile.ip', '.env.example', '.dockerignore') or (name.startswith('server/') and '/tests/' not in name) or name.startswith('web/src/'):
             target.writestr(name, source.read(name))
 runtime_payload = runtime.getvalue()
 runtime_digest = hashlib.sha256(runtime_payload).hexdigest()

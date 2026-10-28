@@ -30,3 +30,11 @@ After the redesign, all 5 backend tests and the real Docker/browser rendering sm
 - All 5 backend tests passed after separating the frontend connection.
 - Caddy 2.11.7 validated `Caddyfile.ip`, including the explicit Let's Encrypt `shortlived` ACME issuer profile. The pinned `caddy:2.11.7-alpine` image is available. Docker Compose accepted the IP-certificate override configuration.
 - No real IP certificate has been issued here, and no Vercel deployment, Oracle HTTPS endpoint or production CORS connection has been verified. Follow docs/VERCEL.md for actual deployment checks. GitHub publication status must be established from the push result, not inferred from a local commit.
+
+## Vercel Python-install failure fix
+
+The first real Vercel build of commit 4e3cce0 attempted to install the Oracle backend under Python 3.14.8. Its pinned pydantic-core/PyO3 dependency supports at most Python 3.13, so installation failed before the static build. Backend dependencies were not upgraded or given ABI bypass flags.
+
+The frontend now lives in the independent `web` project, with only Node/static source, its own lockfile, and explicit npm install/build commands in `web/vercel.json`. The Vercel project Root Directory must be `web`, Output Directory `dist`, with source inclusion outside that root disabled. Root npm commands still delegate to this project. Docker uses the same canonical `web/src` files through a root build context restricted by `.dockerignore`; the Python backend remains on its pinned Python 3.12 image.
+
+Validation after isolation: **4 frontend tests passed**, including copying only the web project into an isolated temporary directory, performing a clean npm install and building with no parent/backend source available. All **5 backend tests passed**. The exported frontend's separate-backend browser smoke and the real Docker/eSpeak/H.264/AAC rendering smoke passed again. Compose accepted the updated root build context. The new project-root settings still need to be applied and redeployed in the user's Vercel dashboard; local checks do not establish a successful hosted deployment.

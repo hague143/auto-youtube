@@ -244,6 +244,9 @@ def delete(job_id: str):
 
 
 STATIC = Path(__file__).with_name('static')
+if not STATIC.is_dir():
+    # Local source checkout; Docker copies these same sources into /app/static.
+    STATIC = Path(__file__).resolve().parent.parent / 'web' / 'src'
 app.mount('/assets', StaticFiles(directory=STATIC), name='assets')
 
 

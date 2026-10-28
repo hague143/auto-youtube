@@ -12,9 +12,11 @@ The browser interface includes a studio sidebar, CSS 3D poster stack and pointer
 
 ## Vercel frontend
 
-The repository includes `vercel.json` and a dependency-free static build: `npm ci`, `npm run test:build`, `npm run build`. Import the repository root into Vercel as Other; build command `npm run build`, output `web-dist`. The frontend gets an actual `.vercel.app` address from Vercel. Set the optional public `STUDIO_BACKEND_URL` to the real Oracle HTTPS origin, or enter it at runtime in Settings. Never put access tokens or provider keys in the public build. Video rendering and persistent files stay on Oracle. See [Vercel instructions](docs/VERCEL.md), including the no-DuckDNS IP-certificate option.
+Set the Vercel **Root Directory to `web`**, Framework Other, install command `npm ci --ignore-scripts`, build command `npm run build`, and output directory `dist`. The `web` project contains only frontend files and its own Node lockfile/config; Python stays outside that project. Do not include source files outside the Root Directory in the Vercel build. The frontend gets an actual `.vercel.app` address from Vercel. Set the optional public `STUDIO_BACKEND_URL` to the real Oracle HTTPS origin, or enter it at runtime in Settings. Never put access tokens or provider keys in the public build. Video rendering and persistent files stay on Oracle. See [Vercel instructions](docs/VERCEL.md), including the no-DuckDNS IP-certificate option.
 
-Manrope variable font is distributed under the SIL Open Font License; see `server/static/fonts/OFL.txt`. Source: `@fontsource-variable/manrope` 5.2.8, Latin variable WOFF2.
+For local frontend checks, run `npm ci --ignore-scripts` inside `web`, then `npm run test:build` and `npm run build`. Root-level npm scripts delegate to the same project and generate `web/dist`.
+
+Manrope variable font is distributed under the SIL Open Font License; see `web/src/fonts/OFL.txt`. Source: `@fontsource-variable/manrope` 5.2.8, Latin variable WOFF2.
 
 ## Oracle deployment
 

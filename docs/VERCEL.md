@@ -6,15 +6,18 @@ Vercel hosts the static browser interface. Oracle runs FFmpeg/MoviePy, voice gen
 
 After this repository is successfully published to GitHub, import it using Vercel **Add New → Project → Import Git Repository**.
 
-- Root directory: repository root.
+- Root directory: **`web`**. Disable inclusion of source files outside the Root Directory.
 - Framework: Other (`framework: null` in vercel.json).
+- Install command: `npm ci --ignore-scripts`.
 - Build command: `npm run build`.
-- Output directory: `web-dist`.
+- Output directory: `dist`.
 - Node version: 24.x.
 - No provider API keys or server token in Vercel environment variables.
 - Optional public variable: `STUDIO_BACKEND_URL`, containing only the trusted HTTPS origin of your actual rendering backend. Leave unset to enter the URL in Settings at runtime.
 
-The build copies only frontend assets and a public connection config into web-dist; Python code, .env and video outputs are excluded. Vercel supplies the actual `.vercel.app` hostname after deployment. No deployment or hostname has been created by this workspace.
+The isolated web project has its own package.json, lockfile, build script and vercel.json. The build copies only frontend assets and a public connection config into dist; Python code, .env and video outputs are outside this project. Vercel supplies the actual `.vercel.app` hostname after deployment. No deployment or hostname has been created by this workspace.
+
+If a prior deployment used the repository root and failed while installing pydantic-core on Python 3.14, change Settings → Build and Deployment → Root Directory to `web`, save, and redeploy the latest main commit containing this directory. The earlier root deployment tried to install Oracle-only Python dependencies. The solution is project isolation; no Python ABI compatibility override or backend dependency upgrade is needed for the static frontend.
 
 The UI opens before a backend is connected. Generation requires the backend. Settings allows a trusted HTTPS server origin and private access token. Credentials and a runtime-entered URL remain only in this page session and clear on refresh; a public build-time backend origin can be restored automatically on page load. The self-hosted Docker version defaults to its own origin as before.
 
