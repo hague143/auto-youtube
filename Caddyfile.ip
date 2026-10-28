@@ -1,0 +1,11 @@
+# Browser-trusted IP certificate. Caddy 2.11+; requires public TCP 80/443.
+https://{$SITE_DOMAIN} {
+	tls {
+		issuer acme {
+			dir https://acme-v02.api.letsencrypt.org/directory
+			profile shortlived
+		}
+	}
+	encode zstd gzip
+	reverse_proxy studio:8000
+}

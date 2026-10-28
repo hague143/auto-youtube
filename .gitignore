@@ -1,0 +1,12 @@
+.env
+.env.*
+!.env.example
+.venv/
+__pycache__/
+.pytest_cache/
+server/data/
+artifacts/
+*.pyc
+web-dist/
+node_modules/
+.vercel/

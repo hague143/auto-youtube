@@ -1,0 +1,28 @@
+services:
+  studio:
+    build: ./server
+    env_file: .env
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - studio-data:/data
+    restart: unless-stopped
+    stop_grace_period: 2m
+  web:
+    image: caddy:2-alpine
+    environment:
+      SITE_DOMAIN: ${SITE_DOMAIN:?Set SITE_DOMAIN in .env}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - studio
+    restart: unless-stopped
+volumes:
+  studio-data:
+  caddy-data:
+  caddy-config:

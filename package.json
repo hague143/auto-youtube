@@ -1,0 +1,10 @@
+{
+  "name": "faceless-studio-web",
+  "version": "0.2.0",
+  "private": true,
+  "engines": { "node": "24.x" },
+  "scripts": {
+    "build": "node scripts/build_web.mjs",
+    "test:build": "node --test scripts/build_web.test.mjs"
+  }
+}

@@ -1,0 +1,9 @@
+fastapi==0.115.12
+uvicorn==0.34.2
+httpx==0.28.1
+pydantic==2.11.4
+edge-tts==7.2.7
+moviepy==2.2.1
+Pillow==11.3.0
+python-dotenv==1.1.0
+truststore==0.10.4

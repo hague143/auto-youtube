@@ -1,0 +1,6 @@
+# Use alongside compose.yaml with SITE_DOMAIN set to the VM's actual public IP.
+services:
+  web:
+    image: caddy:2.11.7-alpine
+    volumes:
+      - ./Caddyfile.ip:/etc/caddy/Caddyfile:ro
