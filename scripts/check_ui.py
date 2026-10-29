@@ -58,7 +58,7 @@ with sync_playwright() as playwright:
             page.get_by_role('button', name='Connect server', exact=False).click()
             assert page.locator('#page-label').inner_text() == 'Settings'
             assert page.locator('.nav-button[aria-current="page"]').inner_text() == 'Settings'
-            for provider in ('Gemini', 'Pexels', 'Pixabay', 'Hugging Face'):
+            for provider in ('Gemini', 'ElevenLabs', 'Pexels', 'Pixabay', 'Hugging Face'):
                 field = page.get_by_label(provider + ' API key', exact=True)
                 assert field.get_attribute('type') == 'password'
             page.locator('#token').fill('test-only-ui-fixture')

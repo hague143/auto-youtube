@@ -39,6 +39,7 @@ class Keys(BaseModel):
     pexels: SecretStr = SecretStr('')
     pixabay: SecretStr = SecretStr('')
     huggingface: SecretStr = SecretStr('')
+    elevenlabs: SecretStr = SecretStr('')
 
 
 class CreateVideo(BaseModel):
@@ -46,7 +47,9 @@ class CreateVideo(BaseModel):
     script: str = Field(default='', max_length=6000)
     duration: Literal[15, 30, 60] = 30
     format: Literal['portrait', 'landscape', 'square'] = 'portrait'
-    voice: Literal['en-US-AriaNeural', 'en-US-GuyNeural', 'en-GB-SoniaNeural', 'en-IN-NeerjaNeural', 'local-en'] = 'en-US-AriaNeural'
+    voice: Literal['elevenlabs', 'en-US-AriaNeural', 'en-US-GuyNeural', 'en-GB-SoniaNeural', 'en-IN-NeerjaNeural', 'local-en'] = 'en-US-AriaNeural'
+    elevenlabs_voice_id: str = Field(default='JBFqnCBsd6RMkjVDRZzb', min_length=1, max_length=80,
+                                    pattern=r'^[A-Za-z0-9_-]+$')
     visuals: Literal['studio', 'stock'] = 'studio'
     captions: Literal['script', 'whisper', 'none'] = 'script'
     thumbnail: bool = False
@@ -54,7 +57,7 @@ class CreateVideo(BaseModel):
 
 
 class VerifyKey(BaseModel):
-    provider: Literal['gemini', 'pexels', 'pixabay', 'huggingface']
+    provider: Literal['gemini', 'pexels', 'pixabay', 'huggingface', 'elevenlabs']
     key: SecretStr
 
 
@@ -148,14 +151,28 @@ async def verify_key(data: VerifyKey):
         'pexels': ('https://api.pexels.com/v1/search', {'Authorization': key}, {'query': 'nature', 'per_page': 1}),
         'pixabay': ('https://pixabay.com/api/', {}, {'key': key, 'q': 'nature', 'per_page': 3}),
         'huggingface': ('https://huggingface.co/api/whoami-v2', {'Authorization': 'Bearer ' + key}, {}),
+        'elevenlabs': ('https://api.elevenlabs.io/v1/voices', {'xi-api-key': key}, {}),
     }
     url, headers, params = endpoints[data.provider]
     try:
         async with httpx.AsyncClient(timeout=20, follow_redirects=False) as client:
             response = await client.get(url, headers=headers, params=params)
         response.raise_for_status()
+    except httpx.HTTPStatusError as error:
+        if data.provider == 'elevenlabs' and error.response.status_code == 403:
+            raise HTTPException(502, 'ElevenLabs key test requires Voices read permission. A Text-to-Speech-only key can still generate with a valid Voice ID.') from None
+        raise HTTPException(502, 'Provider did not accept the request. Check key, network and quota.') from None
     except (httpx.HTTPError, ValueError):
         raise HTTPException(502, 'Provider did not accept the request. Check key, network and quota.') from None
+    if data.provider == 'elevenlabs':
+        try:
+            voices = [{'id': voice['voice_id'], 'name': str(voice.get('name', 'Voice'))[:80]}
+                      for voice in response.json().get('voices', [])
+                      if isinstance(voice, dict) and isinstance(voice.get('voice_id'), str)
+                      and re.fullmatch(r'[A-Za-z0-9_-]{1,80}', voice['voice_id'])][:100]
+        except (ValueError, TypeError, AttributeError):
+            raise HTTPException(502, 'ElevenLabs returned an unreadable voice list.') from None
+        return {'ok': True, 'voices': voices}
     return {'ok': True}
 
 
@@ -180,6 +197,8 @@ async def create(data: CreateVideo):
         raise HTTPException(503, 'FFmpeg is missing on the server.')
     if not data.script.strip() and not data.keys.gemini.get_secret_value().strip():
         raise HTTPException(422, 'Add a Gemini key or paste your own script.')
+    if data.voice == 'elevenlabs' and not data.keys.elevenlabs.get_secret_value().strip():
+        raise HTTPException(422, 'Add your ElevenLabs API key in Settings to use this voice.')
     if data.visuals == 'stock' and not (data.keys.pexels.get_secret_value().strip() or data.keys.pixabay.get_secret_value().strip()):
         raise HTTPException(422, 'Add a stock provider key or choose Studio backgrounds.')
     if data.thumbnail and not data.keys.huggingface.get_secret_value().strip():

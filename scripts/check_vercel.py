@@ -46,8 +46,15 @@ try:
             elif endpoint == '/api/projects' and request.method == 'GET':
                 route.fulfill(json=projects, headers=headers)
             elif endpoint == '/api/projects' and request.method == 'POST':
+                payload = request.post_data_json
+                assert payload['voice'] == 'elevenlabs'
+                assert payload['elevenlabs_voice_id'] == 'fixtureVoice'
+                assert payload['keys']['elevenlabs'] == 'test-only-elevenlabs-key'
                 projects.append(fixture)
                 route.fulfill(status=202, json=fixture, headers=headers)
+            elif endpoint == '/api/verify-key':
+                assert request.post_data_json == {'provider': 'elevenlabs', 'key': 'test-only-elevenlabs-key'}
+                route.fulfill(json={'ok': True, 'voices': [{'id': 'fixtureVoice', 'name': 'Fixture voice'}]}, headers=headers)
             elif endpoint.endswith('/files/video.mp4'):
                 route.fulfill(body=(ROOT / 'artifacts/validated-oracle-package.mp4').read_bytes(), content_type='video/mp4', headers=headers)
             else:
@@ -65,8 +72,13 @@ try:
         page.locator('#server').fill('https://backend.example/')
         page.get_by_role('button', name='Test connection', exact=True).click()
         page.get_by_role('status').filter(has_text='Local voice ready').wait_for()
+        page.get_by_label('ElevenLabs API key', exact=True).fill('test-only-elevenlabs-key')
+        page.get_by_role('button', name='Test ElevenLabs key', exact=True).click()
+        page.get_by_role('status').filter(has_text='ElevenLabs key accepted').wait_for()
+        assert page.get_by_label('ElevenLabs Voice ID', exact=True).input_value() == 'fixtureVoice'
         page.get_by_role('button', name='Apply settings', exact=False).click()
         page.get_by_role('button', name='Create', exact=True).click()
+        assert page.locator('#voice').input_value() == 'elevenlabs'
         page.locator('#topic').fill(fixture['title'])
         page.locator('#script').fill('This tests a separate backend connection.')
         page.get_by_role('button', name='Create video', exact=False).click()
@@ -79,10 +91,11 @@ try:
         page.reload()
         page.get_by_role('button', name='Settings', exact=True).click()
         assert page.locator('#token').input_value() == ''
+        assert page.get_by_label('ElevenLabs API key', exact=True).input_value() == ''
         assert page.locator('#server').input_value() == ''
         assert not errors, errors
         browser.close()
-        print('Vercel static export browser check passed: separate HTTPS backend, bearer auth, create/status, MP4 download, insecure endpoint rejection, session clearing; no API calls to the frontend origin.')
+        print('Vercel static export browser check passed: ElevenLabs key test, account Voice ID selection, separate HTTPS backend, bearer auth, create/status, MP4 download, insecure endpoint rejection, session clearing; no API calls to the frontend origin.')
 finally:
     server.shutdown()
     server.server_close()

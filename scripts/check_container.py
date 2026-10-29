@@ -42,13 +42,14 @@ try:
             page.on('pageerror', lambda error: errors.append(str(error)))
             page.goto('http://127.0.0.1:18000')
             page.get_by_role('button', name='Settings', exact=True).click()
-            for provider in ('Gemini', 'Pexels', 'Pixabay', 'Hugging Face'):
+            for provider in ('Gemini', 'ElevenLabs', 'Pexels', 'Pixabay', 'Hugging Face'):
                 assert page.get_by_label(provider + ' API key', exact=False).get_attribute('type') == 'password'
             page.locator('#token').fill(token)
             page.get_by_role('button', name='Test connection', exact=True).click()
             page.get_by_role('status').filter(has_text='Local voice ready').wait_for()
             page.get_by_role('button', name='Apply settings', exact=True).click()
             page.get_by_role('button', name='Create', exact=True).click()
+            page.locator('#voice').select_option('local-en')
             page.locator('#topic').fill('A small idea')
             page.locator('#script').fill('A great story begins with one small idea. Turn your curiosity into something worth sharing.')
             page.get_by_role('button', name='Create video', exact=False).click()

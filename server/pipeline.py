@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import html
 import json
 import math
 import os
+import re
 import shutil
 import ssl
 import subprocess
@@ -20,7 +22,7 @@ import aiohttp
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
-from timeline import captions_from_words, estimated_words, scenes_from_words, split_script, visual_query
+from timeline import captions_from_words, estimated_words, scenes_from_words, split_script, visual_query, words_from_characters
 
 FONT = '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'
 SIZES = {'portrait': (720, 1280), 'landscape': (1280, 720), 'square': (720, 720)}
@@ -107,6 +109,63 @@ class Narration:
     words: list
     scenes: list
     aligned: bool
+
+
+def elevenlabs_narration(client, script, api_key, voice_id, folder):
+    """One paid-provider synthesis request; keep audio and alignment together."""
+    if not api_key:
+        raise PipelineError('Add your ElevenLabs API key in Settings.')
+    if not isinstance(voice_id, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,80}', voice_id):
+        raise PipelineError('Enter a valid ElevenLabs Voice ID in Settings.')
+    audio = folder / 'voice.mp3'
+    try:
+        with client.stream('POST', f'https://api.elevenlabs.io/v1/text-to-speech/{voice_id}/with-timestamps',
+                           headers={'xi-api-key': api_key}, params={'output_format': 'mp3_44100_128'},
+                           json={'text': script, 'model_id': 'eleven_multilingual_v2'},
+                           timeout=90, follow_redirects=False) as response:
+            content, size = [], 0
+            limit = 16 * 1024 * 1024 if response.is_success else 64 * 1024
+            for chunk in response.iter_bytes(chunk_size=64 * 1024):
+                size += len(chunk)
+                if size > limit:
+                    raise PipelineError('ElevenLabs response exceeds the supported size.')
+                content.append(chunk)
+            try:
+                result = json.loads(b''.join(content))
+            except (ValueError, UnicodeError):
+                result = {}
+            if not response.is_success:
+                detail = result.get('detail', {}) if isinstance(result, dict) else {}
+                reason = detail.get('status') if isinstance(detail, dict) else None
+                if reason in ('quota_exceeded', 'insufficient_credits', 'credit_balance_too_low'):
+                    raise PipelineError('ElevenLabs credits are exhausted. Check your account allowance.')
+                if response.status_code == 401:
+                    raise PipelineError('ElevenLabs rejected the API key (HTTP 401). Check the key in Settings.')
+                if response.status_code == 403:
+                    raise PipelineError('ElevenLabs denied this voice or key permission (HTTP 403). Enable Text-to-Speech and choose an available Voice ID.')
+                if response.status_code == 404:
+                    raise PipelineError('ElevenLabs voice was not found. Check the Voice ID in Settings.')
+                if response.status_code == 429:
+                    raise PipelineError('ElevenLabs rate or account limit reached (HTTP 429). Check credits and retry later.')
+                raise PipelineError(f'ElevenLabs could not synthesize this narration (HTTP {response.status_code}). Check voice and model access.')
+        if not isinstance(result, dict) or not isinstance(result.get('audio_base64'), str):
+            raise PipelineError('ElevenLabs returned no usable audio.')
+        audio.write_bytes(base64.b64decode(result['audio_base64'], validate=True))
+        duration = audio_duration(audio)
+        alignment = result.get('normalized_alignment') or result.get('alignment')
+        if not isinstance(alignment, dict):
+            raise PipelineError('ElevenLabs returned audio without character timings.')
+        words = words_from_characters(alignment, duration)
+        return Narration(audio, duration, words, scenes_from_words(words, duration, script), True)
+    except PipelineError:
+        audio.unlink(missing_ok=True)
+        raise
+    except httpx.HTTPError:
+        audio.unlink(missing_ok=True)
+        raise PipelineError('Could not connect securely to ElevenLabs. Check server connectivity and retry later.') from None
+    except (ValueError, TypeError, KeyError, OSError):
+        audio.unlink(missing_ok=True)
+        raise PipelineError('ElevenLabs returned unreadable audio or invalid character timings.') from None
 
 
 def natural_voice_error(error):
@@ -373,7 +432,11 @@ def render(data, folder, progress):
         if len(script) > 6000 or len(script.split()) > data['duration'] * 4:
             raise PipelineError('Script is too long for the selected length. Shorten it or choose a longer target.')
         progress(stage='Creating narration', progress=20, script=script)
-        speech = narration(script, data['voice'], folder, warnings)
+        if data['voice'] == 'elevenlabs':
+            speech = elevenlabs_narration(client, script, key(data, 'elevenlabs'),
+                                         data.get('elevenlabs_voice_id', 'JBFqnCBsd6RMkjVDRZzb'), folder)
+        else:
+            speech = narration(script, data['voice'], folder, warnings)
         if speech.duration > data['duration'] + .01:
             suggested = max(1, int(len(script.split()) * data['duration'] / speech.duration * .95))
             raise PipelineError(f'Narration takes {speech.duration:.1f}s for a {data["duration"]}s target. '

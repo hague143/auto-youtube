@@ -2,8 +2,10 @@
   const $ = id => document.getElementById(id);
   const esc = value => String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
   const icon = name => '<svg class="icon" aria-hidden="true"><use href="#i-' + name + '"/></svg>';
+  const defaultElevenVoice = 'JBFqnCBsd6RMkjVDRZzb';
   const providers = [
     ['gemini','Gemini','AI-written scripts','https://aistudio.google.com/apikey','✦'],
+    ['elevenlabs','ElevenLabs','Natural voiceover and speech timing','https://elevenlabs.io/app/settings/api-keys','E'],
     ['pexels','Pexels','Stock videos and photos','https://www.pexels.com/api/','P'],
     ['pixabay','Pixabay','Alternative stock photos','https://pixabay.com/api/docs/','p'],
     ['huggingface','Hugging Face','Optional AI cover','https://huggingface.co/settings/tokens','H']
@@ -13,12 +15,13 @@
   const finePointer = matchMedia('(hover: hover) and (pointer: fine)');
   const publicConfig=window.STUDIO_CONFIG||{};
   const defaultServer=publicConfig.backendUrl||(publicConfig.frontendOnly?'':location.origin);
-  let state={server:defaultServer,token:'',keys:{}}, projects=[], active='', videoUrl='', pollBusy=false;
+  let state={server:defaultServer,token:'',keys:{},elevenlabsVoiceId:defaultElevenVoice}, projects=[], active='', videoUrl='', pollBusy=false;
   let session=0, librarySignature='', detailSignature='';
   const covers=new Map(), pendingCovers=new Map();
   $('server').value=defaultServer;
   $('keys').innerHTML=providers.map(([id,name,help,url,mark]) =>
-    '<div class="provider-field" data-provider="'+id+'"><div class="provider-heading"><span class="provider-avatar" aria-hidden="true">'+mark+'</span><div><strong>'+name+'</strong><small>'+help+'</small></div><a href="'+url+'" target="_blank" rel="noreferrer noopener">Get key '+icon('arrow')+'</a></div><label for="key-'+id+'">'+name+' API key</label><div class="key-row"><input id="key-'+id+'" type="password" autocomplete="off" placeholder="Paste your '+name+' key"><button type="button" data-test="'+id+'" aria-label="Test '+name+' key">Test</button></div></div>'
+    '<div class="provider-field" data-provider="'+id+'"><div class="provider-heading"><span class="provider-avatar" aria-hidden="true">'+mark+'</span><div><strong>'+name+'</strong><small>'+help+'</small></div><a href="'+url+'" target="_blank" rel="noreferrer noopener">Get key '+icon('arrow')+'</a></div><label for="key-'+id+'">'+name+' API key</label><div class="key-row"><input id="key-'+id+'" type="password" autocomplete="off" placeholder="Paste your '+name+' key"><button type="button" data-test="'+id+'" aria-label="Test '+name+' key">Test</button></div>'+
+    (id==='elevenlabs'?'<label for="elevenlabs-voice">ElevenLabs Voice ID</label><input id="elevenlabs-voice" list="elevenlabs-voices" maxlength="80" autocomplete="off" value="'+defaultElevenVoice+'"><datalist id="elevenlabs-voices"></datalist><p class="field-note">Test your key to load your account’s voices, or paste a Voice ID. Your ElevenLabs plan and credits apply.</p>':'')+'</div>'
   ).join('');
 
   function notify(text,error=false){
@@ -44,7 +47,7 @@
     if(url.username||url.password||url.pathname!=='/'||url.search||url.hash)throw Error('Use only the server origin, without paths, credentials or query parameters.');
     return url.origin;
   }
-  function draft(){return {server:serverOrigin($('server').value),token:$('token').value.trim(),keys:Object.fromEntries(providers.map(([id])=>[id,$('key-'+id).value.trim()]))}}
+  function draft(){return {server:serverOrigin($('server').value),token:$('token').value.trim(),keys:Object.fromEntries(providers.map(([id])=>[id,$('key-'+id).value.trim()])),elevenlabsVoiceId:$('elevenlabs-voice').value.trim()||defaultElevenVoice}}
   async function call(path,method='GET',body,settings=state,file=false){
     if(location.protocol!=='https:'&&!['localhost','127.0.0.1'].includes(location.hostname))throw Error('Open your HTTPS app address before sending credentials.');
     if(!settings.token)throw Error('Add your server access token in Settings.');
@@ -144,7 +147,16 @@
     if(button.dataset.topic){$('topic').value=button.dataset.topic;updatePreview();$('topic').focus({preventScroll:true})}
     if(button.dataset.open){const project=projects.find(p=>p.id===button.dataset.open);if(project){stopVideo();showDetail(project);$('detail').scrollIntoView({behavior:reducedMotion.matches?'instant':'smooth',block:'start'})}}
     if(button.dataset.close){active='';detailSignature='';$('detail').hidden=true;stopVideo()}
-    if(button.dataset.test)await run(button,async()=>{const settings=draft(),provider=button.dataset.test;if(!settings.keys[provider])throw Error('Enter this provider key first.');await call('/api/verify-key','POST',{provider,key:settings.keys[provider]},settings);notify('Key accepted. Generation still depends on model access and quota.')});
+    if(button.dataset.test)await run(button,async()=>{
+      const settings=draft(),provider=button.dataset.test;if(!settings.keys[provider])throw Error('Enter this provider key first.');
+      const result=await call('/api/verify-key','POST',{provider,key:settings.keys[provider]},settings);
+      if(provider==='elevenlabs'&&Array.isArray(result.voices)){
+        const voices=result.voices.filter(voice=>voice&&typeof voice.id==='string'&&/^[A-Za-z0-9_-]{1,80}$/.test(voice.id));
+        $('elevenlabs-voices').innerHTML=voices.map(voice=>'<option value="'+esc(voice.id)+'">'+esc(voice.name)+'</option>').join('');
+        if(voices.length&&$('elevenlabs-voice').value===defaultElevenVoice&&!voices.some(voice=>voice.id===defaultElevenVoice))$('elevenlabs-voice').value=voices[0].id;
+        notify('ElevenLabs key accepted. '+voices.length+' voices loaded. Apply settings to use your selected Voice ID.');
+      }else notify('Key accepted. Generation still depends on model access and quota.');
+    });
     if(button.dataset.artifact)await run(button,async()=>{
       const id=active,preview=button.dataset.artifact==='preview',filename=preview?'video.mp4':button.dataset.artifact;
       const blob=await call('/api/projects/'+encodeURIComponent(id)+'/files/'+filename,'GET',undefined,state,true);
@@ -172,7 +184,7 @@
   }));
   $('reveal').addEventListener('change',()=>['token',...providers.map(([id])=>'key-'+id)].forEach(id=>$(id).type=$('reveal').checked?'text':'password'));
   $('clear').addEventListener('click',()=>{
-    state={server:defaultServer,token:'',keys:{}};clearCovers();$('settings-form').reset();$('server').value=defaultServer;
+    state={server:defaultServer,token:'',keys:{},elevenlabsVoiceId:defaultElevenVoice};clearCovers();$('settings-form').reset();$('server').value=defaultServer;$('elevenlabs-voices').replaceChildren();
     ['token',...providers.map(([id])=>'key-'+id)].forEach(id=>{$(id).value='';$(id).type='password'});
     projects=[];active='';$('detail').hidden=true;stopVideo();connection(false);
     $('projects').innerHTML=emptyState(false);$('library-count').textContent='—';notify('Credentials cleared.');
@@ -190,8 +202,10 @@
     event.preventDefault();
     if(!state.token){tab('settings');notify('Add your private server access token first.',true);$('token').focus();return}
     run($('generate'),async()=>{
-      const body={topic:$('topic').value.trim(),script:$('script').value.trim(),duration:Number($('duration').value),format:$('format').value,voice:$('voice').value,visuals:$('visuals').value,captions:$('captions').value,thumbnail:$('thumbnail').checked,keys:state.keys};
+      const body={topic:$('topic').value.trim(),script:$('script').value.trim(),duration:Number($('duration').value),format:$('format').value,voice:$('voice').value,elevenlabs_voice_id:state.elevenlabsVoiceId||defaultElevenVoice,visuals:$('visuals').value,captions:$('captions').value,thumbnail:$('thumbnail').checked,keys:state.keys};
       if(!body.script&&!state.keys.gemini)throw Error('Add a Gemini key in Settings or paste your own narration.');
+      if(body.voice==='elevenlabs'&&!state.keys.elevenlabs)throw Error('Add your ElevenLabs API key in Settings.');
+      if(body.voice==='elevenlabs'&&!/^[A-Za-z0-9_-]{1,80}$/.test(body.elevenlabs_voice_id))throw Error('Enter a valid ElevenLabs Voice ID in Settings.');
       if(body.visuals==='stock'&&!state.keys.pexels&&!state.keys.pixabay)throw Error('Add a stock key or choose Studio backgrounds.');
       if(body.thumbnail&&!state.keys.huggingface)throw Error('Add a Hugging Face token or disable AI cover.');
       const project=await call('/api/projects','POST',body);active=project.id;projects=[project,...projects.filter(p=>p.id!==project.id)];

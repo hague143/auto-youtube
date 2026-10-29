@@ -1,5 +1,19 @@
 # Voice quality and matching visuals
 
+## ElevenLabs
+
+1. Connect your rendering server in Settings as before. Paste your ElevenLabs key into the masked **ElevenLabs API key** field. Do not put this key in the server access token field, source code or Vercel build variables.
+2. Press **Test** next to the key to read your account's voices without synthesizing speech. The **ElevenLabs Voice ID** field offers the returned IDs and names. If the initial default ID is absent, it selects an available voice. You can also paste a specific Voice ID yourself.
+3. Press **Apply settings**, then choose **ElevenLabs · your API key** under Narrator voice in Create. Start with a short English script and Script captions. The sample-story button deliberately selects the offline voice, so choose ElevenLabs again after loading a sample.
+
+Keys need **Text-to-Speech** permission. The optional key test also needs **Voices read** permission; TTS-only keys can generate with a valid Voice ID even when that read check is denied. Rendering uses `eleven_multilingual_v2` and the `/v1/text-to-speech/{voice_id}/with-timestamps` endpoint with MP3 output. Its audio and character alignment come from the same synthesis request. Character times are grouped into spoken words for both scene cuts and captions, preferring normalized alignment when provided.
+
+Your ElevenLabs allowance/credits apply. The app sends one synthesis request per render and does not automatically retry paid synthesis. A provider request may consume credits even if a later duration check or video export fails. Check a short narration first. HTTP errors distinguish invalid keys, missing voice permissions, unavailable Voice IDs, credit exhaustion and rate limits without exposing raw provider responses. No fallback voice is substituted.
+
+The key stays in page memory, clears on refresh and is sent only to your own server for the requested operation. It is forwarded to ElevenLabs using the `xi-api-key` header and is not written into project metadata or the static frontend. Public deployment requires your normal trusted HTTPS backend connection.
+
+## Edge and offline voices
+
 In Create, choose **Aria · US English**, **Guy · US English** or **Sonia · British English** for a natural network voice. **Local English** is robotic eSpeak intended for offline tests. The sample-story button deliberately chooses the offline voice, so change the Narrator voice after loading a sample if you want natural speech. A failed natural voice now reports an error; it no longer silently substitutes eSpeak.
 
 For moving stock footage, choose **Pexels / Pixabay stock media** and add a Pexels API key in Settings. Pixabay supplies photos as a fallback. Studio backgrounds are text cards, not topic-specific stock footage. Adding a Gemini key also enables short concrete visual search queries for each narration scene, even when you supply a manual script. Without Gemini, queries use the words of that scene, not the global video title.
@@ -23,7 +37,7 @@ sudo docker compose -f compose.yaml -f compose.ip-https.yaml up -d --no-deps stu
 curl --fail http://127.0.0.1:8000/health
 ```
 
-The update preserves `.env`, project data and Caddy certificate volumes. The Vercel frontend can keep its current deployment because its request fields remain compatible. Verify a new natural-voice stock video from the real Vercel site. Provider availability on Oracle must be tested there; a local test with mocked stock/speech services does not establish live provider access.
+The update preserves `.env`, project data and Caddy certificate volumes. ElevenLabs also needs the updated `web` frontend: deploy the latest main commit in Vercel with Root Directory `web`, then refresh after deployment is Ready. Older Edge/local requests remain compatible with the backend. Verify a new natural-voice stock video from the real Vercel site. Provider availability on Oracle must be tested there; a local test with mocked stock/speech services does not establish live provider access.
 
 ## Natural voice connection errors
 

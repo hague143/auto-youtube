@@ -1,4 +1,5 @@
 """Scene and caption timing derived from the narration, rather than stock length."""
+import math
 import re
 
 MAX_SCENE_WORDS = 10
@@ -31,6 +32,40 @@ def estimated_words(text, start, end):
         cues.append({'text': token, 'start': position, 'end': min(finish, end)})
         position = finish
     return cues
+
+
+def words_from_characters(alignment, duration):
+    """Convert ElevenLabs' character alignment into timed spoken words."""
+    characters = alignment['characters']
+    starts = alignment['character_start_times_seconds']
+    ends = alignment['character_end_times_seconds']
+    if not isinstance(characters, list) or not characters or len(characters) > 60000:
+        raise ValueError('Invalid character alignment')
+    if not isinstance(starts, list) or not isinstance(ends, list) or len(characters) != len(starts) or len(starts) != len(ends):
+        raise ValueError('Mismatched character alignment')
+    words, text, start, end, previous = [], '', 0.0, 0.0, 0.0
+    for character, begin, finish in zip(characters, starts, ends):
+        if not isinstance(character, str) or len(character) != 1:
+            raise ValueError('Invalid alignment character')
+        if type(begin) not in (int, float) or type(finish) not in (int, float):
+            raise ValueError('Invalid alignment time')
+        if not math.isfinite(begin) or not math.isfinite(finish) or begin < previous or finish < begin or finish > duration + .25:
+            raise ValueError('Invalid alignment order')
+        previous = begin
+        if character.isspace():
+            if text and end > start:
+                words.append({'text': text, 'start': start, 'end': end})
+            text = ''
+        else:
+            if not text:
+                start = begin
+            text += character
+            end = min(finish, duration)
+    if text and end > start:
+        words.append({'text': text, 'start': start, 'end': end})
+    if not words:
+        raise ValueError('No spoken word timings')
+    return words
 
 
 def scenes_from_words(words, duration, script=''):
