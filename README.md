@@ -4,7 +4,9 @@ A private browser application and Python rendering backend for making narrated v
 
 ## Included
 
-Single-owner authenticated FastAPI server; Gemini script or manual narration; Edge TTS with eSpeak fallback; Pexels videos/photos and Pixabay photos; MoviePy/FFmpeg MP4 assembly; estimated script captions; optional separately installed Whisper; title covers and optional Hugging Face inference; private project list, preview, downloads and deletion. English voices only. Direct social auto-upload, Android packaging, user accounts and billing are not included in this rebuild.
+Single-owner authenticated FastAPI server; Gemini script or manual narration; natural Edge TTS with word timings and an explicit offline eSpeak option; scene-specific Pexels videos/photos and Pixabay photos; MoviePy/FFmpeg MP4 assembly timed to narration; speech-timed captions (estimated within offline scenes); optional separately installed Whisper; title covers and optional Hugging Face inference; private project list, preview, downloads and deletion. English voices only. Direct social auto-upload, Android packaging, user accounts and billing are not included in this rebuild.
+
+For natural narration, select Aria, Guy or Sonia in Create. For footage, select Pexels / Pixabay stock media and add a stock key in Settings; a Gemini key also enables concrete visual search planning for each scene. Long source clips are trimmed to their narration scene. A script that exceeds the selected length produces an actionable error instead of cutting off its ending. See [video quality and timing](docs/VIDEO_QUALITY.md).
 
 API keys stay in browser memory and are sent to your own backend for the requested operation. Keys are not stored with project metadata. Refreshing the page clears browser credentials. Server outputs persist in the Docker data volume. The server processes one render at a time and holds at most 50 projects. Provider quotas and availability apply; free hosting and inference are not guaranteed.
 

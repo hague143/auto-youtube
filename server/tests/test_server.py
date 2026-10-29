@@ -71,7 +71,8 @@ def test_real_ffmpeg_export_with_captions(tmp_path):
         stream.writeframes(b''.join(struct.pack('<h', round(9000 * math.sin(2 * math.pi * 440 * n / 16000))) for n in range(16000)))
     background = tmp_path / 'background.jpg'
     title_image('A real export fixture', (720, 720)).save(background)
-    duration, trimmed = assemble('A real export fixture.', audio, [background], tmp_path, 'square', 'script', 1)
+    scenes = [{'text': 'A real export fixture.', 'asset': background, 'start': 0, 'end': 1}]
+    duration = assemble('A real export fixture.', audio, scenes, tmp_path, 'square', 'script', 1)
     assert .9 < duration <= 1.01
     result = subprocess.run(['ffprobe', '-v', 'error', '-show_streams', '-of', 'json', str(tmp_path / 'video.mp4')], capture_output=True, text=True, check=True)
     streams = json.loads(result.stdout)['streams']

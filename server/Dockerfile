@@ -8,7 +8,7 @@ RUN --mount=type=secret,id=studio_ca,target=/run/secrets/studio-ca.pem \
       PIP_CERT=/run/secrets/studio-ca.pem pip install --no-cache-dir -r requirements.txt; \
     else pip install --no-cache-dir -r requirements.txt; fi
 RUN useradd --create-home --uid 10001 studio && mkdir /data && chown studio:studio /data
-COPY --chown=studio:studio server/main.py server/pipeline.py ./
+COPY --chown=studio:studio server/main.py server/pipeline.py server/timeline.py ./
 COPY --chown=studio:studio web/src ./static
 USER studio
 ENV STUDIO_DATA_DIR=/data

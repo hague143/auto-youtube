@@ -64,6 +64,14 @@ try:
             metadata = json.loads(probe.stdout)
             assert {s['codec_name'] for s in metadata['streams']} >= {'h264', 'aac'}
             assert 1 < float(metadata['format']['duration']) <= 15.5
+            project = httpx.get('http://127.0.0.1:18000/api/projects',
+                                headers={'Authorization': 'Bearer ' + token}).json()[0]
+            assert project['voice_used'] == 'local-en' and not project['word_aligned']
+            scenes = project['scenes']
+            assert len(scenes) >= 2 and scenes[0]['start'] == 0
+            assert abs(scenes[-1]['end'] - project['duration']) < .05
+            assert all(a['end'] == b['start'] for a, b in zip(scenes, scenes[1:]))
+            assert ' '.join(scene['text'] for scene in scenes) == project['script']
             page.screenshot(path=str(output / 'validated-desktop.png'), full_page=True)
             page.reload()
             page.get_by_role('button', name='Settings', exact=True).click()
@@ -81,7 +89,7 @@ try:
             page.get_by_role('button', name='Delete project and files', exact=True).click()
             page.get_by_role('status').filter(has_text='Project deleted.').wait_for()
             assert not errors, errors
-            print('Container + browser smoke passed: auth, settings, real eSpeak narration, MoviePy/FFmpeg MP4, preview, download, refresh credential clearing, persistent project list, mobile layout, deletion.')
+            print('Container + browser smoke passed: auth, settings, real eSpeak narration, measured scene timeline, MoviePy/FFmpeg MP4, preview, download, refresh credential clearing, persistent project list, mobile layout, deletion.')
             print('Export duration:', metadata['format']['duration'])
         finally:
             browser.close()

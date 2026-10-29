@@ -5,6 +5,7 @@
 !server/requirements.txt
 !server/main.py
 !server/pipeline.py
+!server/timeline.py
 !web/
 !web/src/
 !web/src/**

@@ -1,5 +1,7 @@
 # Validation — 2026-10-28 rebuilt private browser edition
 
+Historical checks below describe earlier revisions. See the dated sections at the end for later fixes and deployment observations.
+
 - `python -m pytest -q server/tests`: **5 passed**, including authentication, input/key redaction, request size limit, provider requirements, artifact allowlist, restart recovery, deletion and a real H.264/AAC FFmpeg render with captions. One upstream Starlette/AnyIO deprecation warning.
 - Docker image built successfully on the cloud's **x86_64** Docker daemon. An initial read-permission failure was fixed by assigning copied app files to the non-root runtime user.
 - The cloud build proxy CA was supplied using an optional BuildKit secret containing the operating system CA bundle. TLS verification stayed enabled. Oracle does not need that build secret unless its network also has a separately configured enterprise CA.
@@ -38,3 +40,14 @@ The first real Vercel build of commit 4e3cce0 attempted to install the Oracle ba
 The frontend now lives in the independent `web` project, with only Node/static source, its own lockfile, and explicit npm install/build commands in `web/vercel.json`. The Vercel project Root Directory must be `web`, Output Directory `dist`, with source inclusion outside that root disabled. Root npm commands still delegate to this project. Docker uses the same canonical `web/src` files through a root build context restricted by `.dockerignore`; the Python backend remains on its pinned Python 3.12 image.
 
 Validation after isolation: **4 frontend tests passed**, including copying only the web project into an isolated temporary directory, performing a clean npm install and building with no parent/backend source available. All **5 backend tests passed**. The exported frontend's separate-backend browser smoke and the real Docker/eSpeak/H.264/AAC rendering smoke passed again. Compose accepted the updated root build context. The new project-root settings still need to be applied and redeployed in the user's Vercel dashboard; local checks do not establish a successful hosted deployment.
+
+## Narration and scene timing — 2026-10-29
+
+The user confirmed that the actual Oracle HTTPS `/health` endpoint returned `status: ok` after the IP TLS fix, and that the earlier pipeline creates videos from the connected frontend. These observations do not validate the new narration/scene code on Oracle.
+
+- **16 backend tests passed**, including an actual H.264/AAC render where two eight-second stock fixtures are cut to unequal 0.5-second and 1.5-second narration scenes. Decoded red/blue frames verify the visual switches at the intended boundary; the export lasts two seconds and its SRT preserves supplied word times.
+- Other tests cover sentence boundaries, short scenes with all script words retained, per-scene stock queries, Gemini plans returned out of order, invalid-plan fallback, missing stock results, removal of partial downloads on budget exhaustion, measured offline scene durations, natural-voice timing fixtures, refusal to silently substitute eSpeak, and refusal to truncate overlong narration.
+- The Docker image built with the new timeline module in the restricted build context. The real browser/container smoke passed again with actual eSpeak audio, contiguous measured scene metadata, MP4 preview/download, credential clearing, project listing, mobile layout and deletion. Its local output lasted **6.370 seconds**.
+- A live Aria request in this cloud failed with `ClientConnectorDNSError`. Natural voice timing tests use explicit provider fixtures; live Edge speech and real Pexels/Gemini relevance must be checked on Oracle after updating. Optional Whisper was not installed or run.
+- Existing missing frontend files in the shared checkout were preserved. Validation used a source-only temporary copy of committed frontend files plus the changed backend/tests. This change does not remove frontend files or require a new Vercel build.
+- Existing upstream Starlette/AnyIO and MoviePy/NumPy deprecation warnings remain. No dependency versions or TLS verification settings were relaxed.
