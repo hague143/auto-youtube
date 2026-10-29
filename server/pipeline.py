@@ -3,7 +3,9 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import hashlib
 import html
+import hmac
 import json
 import math
 import os
@@ -11,7 +13,9 @@ import re
 import shutil
 import ssl
 import subprocess
+import tempfile
 import textwrap
+import time
 import wave
 from dataclasses import dataclass
 from pathlib import Path
@@ -32,6 +36,28 @@ class PipelineError(Exception):
     pass
 
 
+class StockAssetSkipped(PipelineError):
+    """This candidate is unsuitable; stock search can try another asset."""
+
+
+def stock_budget(folder):
+    def megabytes(name, default, maximum):
+        try:
+            value = int(os.getenv(name, str(default)))
+        except ValueError:
+            value = default
+        return max(1, min(value, maximum)) * 1024 * 1024
+    remaining = min(megabytes('STUDIO_STOCK_TOTAL_MB', 192, 1024),
+                    max(0, shutil.disk_usage(folder).free - 512 * 1024 * 1024))
+    return {'remaining': remaining, 'asset_limit': megabytes('STUDIO_STOCK_ASSET_MB', 40, 256),
+            'image_reserve': min(12 * 1024 * 1024, remaining // 8), 'disabled': set()}
+
+
+def stock_warning(warnings, message):
+    if warnings is not None and message not in warnings:
+        warnings.append(message)
+
+
 def key(data, provider):
     value = data['keys'].get(provider, '')
     return value.get_secret_value().strip() if hasattr(value, 'get_secret_value') else str(value).strip()
@@ -46,30 +72,98 @@ def provider_json(client, method, url, **kwargs):
         raise PipelineError('Provider request failed. Check the API key, model access and quota.') from None
 
 
-def download(client, url, path, suffixes=('pexels.com', 'pixabay.com'), budget=None):
-    parsed = urlparse(url)
-    host = parsed.hostname or ''
-    if parsed.scheme != 'https' or parsed.username or parsed.password or parsed.port not in (None, 443) or not any(host == suffix or host.endswith('.' + suffix) for suffix in suffixes):
-        raise PipelineError('Stock provider returned an unsupported media address.')
+def download(client, url, path, suffixes=('pexels.com', 'pixabay.com'), budget=None, max_bytes=None, reserve=0):
+    try:
+        parsed = urlparse(url)
+        host = parsed.hostname or ''
+        if parsed.scheme != 'https' or parsed.username or parsed.password or parsed.port not in (None, 443) or not any(host == suffix or host.endswith('.' + suffix) for suffix in suffixes):
+            raise ValueError
+    except (ValueError, TypeError, AttributeError):
+        raise StockAssetSkipped('Stock provider returned an unsupported media address.') from None
+    limit = max_bytes if max_bytes is not None else (budget.get('asset_limit', 40 * 1024 * 1024) if budget is not None else 80 * 1024 * 1024)
+    if budget is not None:
+        limit = min(limit, max(0, budget['remaining'] - reserve))
+    if limit <= 0:
+        raise StockAssetSkipped('Stock download limit reached for this candidate.')
+    size = 0
     try:
         with client.stream('GET', url, follow_redirects=False, timeout=90) as response:
             response.raise_for_status()
-            size = 0
+            length = response.headers.get('Content-Length', '')
+            if length.isdigit() and int(length) > limit:
+                raise StockAssetSkipped('Stock download limit reached for this candidate.')
             with path.open('wb') as target:
-                for chunk in response.iter_bytes():
+                for chunk in response.iter_bytes(chunk_size=64 * 1024):
                     size += len(chunk)
-                    limit = min(40 * 1024 * 1024, budget['remaining']) if budget else 80 * 1024 * 1024
                     if size > limit:
-                        raise PipelineError('Stock download limit reached. Try a shorter script or Studio backgrounds.')
+                        raise StockAssetSkipped('Stock download limit reached for this candidate.')
                     target.write(chunk)
-        if budget is not None:
-            budget['remaining'] -= size
+            if not size:
+                raise StockAssetSkipped('Stock asset was empty.')
     except httpx.HTTPError:
         path.unlink(missing_ok=True)
-        raise PipelineError('Could not download stock media. Try Studio backgrounds.') from None
-    except PipelineError:
+        raise StockAssetSkipped('Stock asset was unavailable; another candidate can be used.') from None
+    except StockAssetSkipped:
         path.unlink(missing_ok=True)
         raise
+    finally:
+        if budget is not None:
+            budget['remaining'] = max(0, budget['remaining'] - size)
+
+
+def stock_search(client, provider, endpoint, data, params, budget, warnings, cache_dir=None):
+    """Cache API searches for 24h per credential without storing that credential."""
+    api_key = key(data, provider)
+    identity = json.dumps([endpoint, {name: value for name, value in params.items() if name != 'key'}], sort_keys=True)
+    fingerprint = hmac.new(api_key.encode(), identity.encode(), hashlib.sha256).hexdigest()
+    path = cache_dir / (fingerprint + '.json') if cache_dir is not None else None
+    if path is not None:
+        try:
+            cached = json.loads(path.read_text())
+            if 0 <= time.time() - cached['saved'] < 86400 and isinstance(cached['data'], dict):
+                return cached['data']
+        except (OSError, ValueError, KeyError, TypeError):
+            pass
+    if provider in budget.setdefault('disabled', set()):
+        return {}
+    try:
+        result = provider_json(client, 'GET', endpoint,
+                               headers={'Authorization': api_key} if provider == 'pexels' else {}, params=params)
+        if not isinstance(result, dict):
+            raise PipelineError('Unreadable stock search response.')
+    except PipelineError:
+        budget['disabled'].add(provider)
+        stock_warning(warnings, f'{provider.title()} search was unavailable; another source or scene cards were used.')
+        return {}
+    if path is not None:
+        # Stock responses are public metadata, but never persist a reflected key.
+        def clean(value):
+            if isinstance(value, str):
+                return value.replace(api_key, '[redacted]') if api_key else value
+            if isinstance(value, list):
+                return [clean(item) for item in value]
+            if isinstance(value, dict):
+                return {name: clean(item) for name, item in value.items()
+                        if name.lower() not in ('key', 'api_key', 'authorization', 'token', 'secret')}
+            return value
+        temporary = None
+        try:
+            cache_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+            content = json.dumps({'saved': time.time(), 'data': clean(result)})
+            if len(content) <= 2 * 1024 * 1024:
+                with tempfile.NamedTemporaryFile(mode='w', dir=cache_dir, suffix='.tmp', delete=False) as target:
+                    temporary = Path(target.name)
+                    target.write(content)
+                temporary.replace(path)
+                files = sorted(cache_dir.glob('*.json'), key=lambda file: file.stat().st_mtime, reverse=True)
+                for old in files[128:]:
+                    old.unlink(missing_ok=True)
+        except OSError:
+            stock_warning(warnings, 'Stock search caching was unavailable on this server.')
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
+    return result
 
 
 def title_image(title, size, variant=0):
@@ -245,46 +339,140 @@ def narration(script, voice, folder, warnings):
     return Narration(audio, position, words, scenes, False)
 
 
-def stock(client, data, folder, query, index, used, budget):
-    """Find one distinct visual for this scene's subject, not the overall topic."""
-    if key(data, 'pexels'):
-        headers = {'Authorization': key(data, 'pexels')}
-        orientation = 'portrait' if data['format'] == 'portrait' else 'landscape'
-        result = provider_json(client, 'GET', 'https://api.pexels.com/videos/search', headers=headers,
-                               params={'query': query, 'per_page': 4, 'orientation': orientation})
-        for item in result.get('videos', []):
+def check_stock_asset(path):
+    try:
+        if path.suffix == '.mp4':
+            result = subprocess.run(['ffprobe', '-v', 'error', '-select_streams', 'v:0',
+                                     '-show_entries', 'stream=width,height:format=duration', '-of', 'json', str(path)],
+                                    check=True, capture_output=True, text=True, timeout=20)
+            metadata = json.loads(result.stdout)
+            stream = metadata['streams'][0]
+            duration = float(metadata['format']['duration'])
+            if not math.isfinite(duration) or duration <= 0 or not 0 < max(stream['width'], stream['height']) <= 1920:
+                raise ValueError
+        else:
+            with Image.open(path) as image:
+                if image.width * image.height > 4096 * 4096:
+                    raise ValueError
+                image.verify()
+    except (subprocess.SubprocessError, OSError, ValueError, KeyError, IndexError, TypeError, Image.DecompressionBombError):
+        raise StockAssetSkipped('Stock asset was unreadable or too large to decode.') from None
+
+
+def stock(client, data, folder, query, index, used, budget, *, warnings=None, cache_dir=None, scene_duration=4):
+    """Try bounded HD/SD candidates, another provider, then matching photos."""
+    orientation = 'portrait' if data['format'] == 'portrait' else 'landscape'
+    reserve = budget.get('image_reserve', 0)
+
+    def video_allowance():
+        share = max(0, budget['remaining'] - reserve) // max(1, budget.get('scenes_left', 1))
+        return min(budget.get('asset_limit', 40 * 1024 * 1024), share)
+
+    def search(provider, endpoint, params):
+        return stock_search(client, provider, endpoint, data, params, budget, warnings, cache_dir)
+
+    def fetch(url, target, video):
+        try:
+            download(client, url, target, budget=budget,
+                     max_bytes=video_allowance() if video else 8 * 1024 * 1024,
+                     reserve=reserve if video else 0)
+            check_stock_asset(target)
+            return True
+        except StockAssetSkipped:
+            target.unlink(missing_ok=True)
+            stock_warning(warnings, 'Some stock files were skipped because of size or availability; other clips or photos were tried.')
+            return False
+
+    def files_for_scene(files):
+        available = video_allowance()
+        candidates = []
+        for file in files:
+            width, height = file.get('width'), file.get('height')
+            size = file.get('size', file.get('file_size'))
+            if not isinstance(width, (int, float)) or not isinstance(height, (int, float)):
+                continue
+            if not 0 < min(width, height) or max(width, height) > 1920:
+                continue
+            if isinstance(size, (int, float)) and size > available:
+                continue
+            candidates.append(file)
+        return sorted(candidates, key=lambda file: (max(file['width'], file['height']) > 1280,
+                                                     abs(max(file['width'], file['height']) - 1280)))
+
+    def duration_order(item):
+        duration = item.get('duration', 30)
+        if not isinstance(duration, (int, float)) or not math.isfinite(duration):
+            duration = 30
+        return (duration < scene_duration, abs(duration - scene_duration))
+
+    if budget['remaining'] > reserve and key(data, 'pexels'):
+        result = search('pexels', 'https://api.pexels.com/videos/search',
+                        {'query': query, 'per_page': 4, 'orientation': orientation})
+        attempts = 0
+        for item in sorted(result.get('videos', []), key=duration_order):
             identity = ('Pexels video', item.get('id', item.get('url')))
             if identity in used:
                 continue
-            files = [f for f in item.get('video_files', []) if f.get('file_type') == 'video/mp4' and f.get('width') and f.get('height')]
-            if not files:
+            files = [file for file in item.get('video_files', []) if file.get('file_type') == 'video/mp4']
+            for file in files_for_scene(files):
+                if attempts >= 4:
+                    break
+                attempts += 1
+                target = folder / f'stock-{index}.mp4'
+                if fetch(file.get('link'), target, True):
+                    used.add(identity)
+                    return target, {'provider': 'Pexels', 'kind': 'video', 'creator': item.get('user', {}).get('name', ''), 'url': item.get('url', '')}
+
+    if budget['remaining'] > reserve and key(data, 'pixabay'):
+        result = search('pixabay', 'https://pixabay.com/api/videos/',
+                        {'key': key(data, 'pixabay'), 'q': query, 'per_page': 4, 'safesearch': 'true'})
+        attempts = 0
+        for item in sorted(result.get('hits', []), key=duration_order):
+            identity = ('Pixabay video', item.get('id', item.get('pageURL')))
+            if identity in used:
                 continue
-            files.sort(key=lambda f: abs(max(f['width'], f['height']) - 1280))
-            target = folder / f'stock-{index}.mp4'
-            download(client, files[0]['link'], target, budget=budget)
-            used.add(identity)
-            return target, {'provider': 'Pexels', 'creator': item.get('user', {}).get('name', ''), 'url': item.get('url', '')}
-        result = provider_json(client, 'GET', 'https://api.pexels.com/v1/search', headers=headers,
-                               params={'query': query, 'per_page': 4, 'orientation': orientation})
+            files = [file for file in item.get('videos', {}).values() if isinstance(file, dict)]
+            for file in files_for_scene(files):
+                if attempts >= 4:
+                    break
+                attempts += 1
+                target = folder / f'stock-{index}.mp4'
+                if fetch(file.get('url'), target, True):
+                    used.add(identity)
+                    return target, {'provider': 'Pixabay', 'kind': 'video', 'creator': item.get('user', ''), 'url': item.get('pageURL', '')}
+
+    if budget['remaining'] <= 0:
+        stock_warning(warnings, 'Stock transfer allowance is used; remaining scenes use their narration text cards.')
+        return None, None
+
+    if key(data, 'pexels'):
+        result = search('pexels', 'https://api.pexels.com/v1/search',
+                        {'query': query, 'per_page': 4, 'orientation': orientation})
         for item in result.get('photos', []):
             identity = ('Pexels photo', item.get('id', item.get('url')))
             if identity in used:
                 continue
-            target = folder / f'stock-{index}.jpg'
-            download(client, item['src']['large'], target, budget=budget)
-            used.add(identity)
-            return target, {'provider': 'Pexels', 'creator': item.get('photographer', ''), 'url': item.get('url', '')}
+            for quality in ('large', 'medium'):
+                url = item.get('src', {}).get(quality)
+                if not url:
+                    continue
+                target = folder / f'stock-{index}.jpg'
+                if fetch(url, target, False):
+                    used.add(identity)
+                    stock_warning(warnings, 'Some scenes use matching photos when a suitable video could not be downloaded.')
+                    return target, {'provider': 'Pexels', 'kind': 'photo', 'creator': item.get('photographer', ''), 'url': item.get('url', '')}
     if key(data, 'pixabay'):
-        result = provider_json(client, 'GET', 'https://pixabay.com/api/', params={
-            'key': key(data, 'pixabay'), 'q': query, 'per_page': 4, 'safesearch': 'true'})
+        result = search('pixabay', 'https://pixabay.com/api/',
+                        {'key': key(data, 'pixabay'), 'q': query, 'per_page': 4, 'safesearch': 'true'})
         for item in result.get('hits', []):
-            identity = ('Pixabay', item.get('id', item.get('pageURL')))
+            identity = ('Pixabay photo', item.get('id', item.get('pageURL')))
             if identity in used:
                 continue
             target = folder / f'stock-{index}.jpg'
-            download(client, item['webformatURL'], target, budget=budget)
-            used.add(identity)
-            return target, {'provider': 'Pixabay', 'creator': item.get('user', ''), 'url': item.get('pageURL', '')}
+            if fetch(item.get('webformatURL'), target, False):
+                used.add(identity)
+                stock_warning(warnings, 'Some scenes use matching photos when a suitable video could not be downloaded.')
+                return target, {'provider': 'Pixabay', 'kind': 'photo', 'creator': item.get('user', ''), 'url': item.get('pageURL', '')}
     return None, None
 
 
@@ -445,10 +633,13 @@ def render(data, folder, progress):
         progress(stage='Planning scenes', progress=32)
         queries = scene_queries(client, data, scenes, warnings) if data['visuals'] == 'stock' else [
             visual_query(scene['text'], data['topic']) for scene in scenes]
-        used, budget = set(), {'remaining': 192 * 1024 * 1024}
+        used, budget = set(), stock_budget(folder)
         for index, (scene, query) in enumerate(zip(scenes, queries)):
             progress(stage=f'Preparing scene {index + 1}/{len(scenes)}', progress=35 + int(20 * index / len(scenes)))
-            path, credit = stock(client, data, folder, query, index, used, budget) if data['visuals'] == 'stock' else (None, None)
+            budget['scenes_left'] = len(scenes) - index
+            path, credit = stock(client, data, folder, query, index, used, budget,
+                                 warnings=warnings, cache_dir=folder.parent / '.stock-cache',
+                                 scene_duration=scene['end'] - scene['start']) if data['visuals'] == 'stock' else (None, None)
             if path is None:
                 path = folder / f'background-{index}.jpg'
                 title_image(scene['text'], SIZES[data['format']], index).save(path, quality=90)

@@ -7,7 +7,7 @@
     ['gemini','Gemini','AI-written scripts','https://aistudio.google.com/apikey','✦'],
     ['elevenlabs','ElevenLabs','Natural voiceover and speech timing','https://elevenlabs.io/app/settings/api-keys','E'],
     ['pexels','Pexels','Stock videos and photos','https://www.pexels.com/api/','P'],
-    ['pixabay','Pixabay','Alternative stock photos','https://pixabay.com/api/docs/','p'],
+    ['pixabay','Pixabay','Stock videos and photos','https://pixabay.com/api/docs/','p'],
     ['huggingface','Hugging Face','Optional AI cover','https://huggingface.co/settings/tokens','H']
   ];
   const formats = {portrait:['9:16','PORTRAIT'],landscape:['16:9','LANDSCAPE'],square:['1:1','SQUARE']};
