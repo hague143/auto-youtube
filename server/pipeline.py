@@ -7,6 +7,7 @@ import json
 import math
 import os
 import shutil
+import ssl
 import subprocess
 import textwrap
 import wave
@@ -15,6 +16,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import httpx
+import aiohttp
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
@@ -107,6 +109,28 @@ class Narration:
     aligned: bool
 
 
+def natural_voice_error(error):
+    """Expose useful categories, never provider URLs, headers or raw exceptions."""
+    status = getattr(error, 'status', None)
+    if type(status) is int and status == 403:
+        return ('Natural voice service rejected the connection (HTTP 403). Update the backend to the pinned '
+                'edge-tts 7.3.1 client and check the server clock. If it persists, this server cannot currently use Edge speech.')
+    if type(status) is int and status == 429:
+        return 'Natural voice service is rate limited (HTTP 429). Wait before creating another video.'
+    if isinstance(error, (ssl.SSLError, aiohttp.ClientSSLError)):
+        return 'Natural voice TLS certificate verification failed. Check the server clock and trusted CA certificates.'
+    if isinstance(error, aiohttp.ClientConnectorDNSError):
+        return 'Natural voice DNS lookup failed. Check outbound DNS and HTTPS connectivity on the rendering server.'
+    if isinstance(error, TimeoutError):
+        return 'Natural voice request timed out. Check the rendering server network and retry later.'
+    if isinstance(error, aiohttp.ClientConnectorError):
+        return 'Natural voice connection failed. Check outbound HTTPS connectivity on the rendering server.'
+    if type(status) is int and 400 <= status <= 599:
+        return f'Natural voice service returned HTTP {status}. Check service availability and retry later.'
+    return ('Natural voice or its timing service is unavailable. Retry later. '
+            'Local English is a separate robotic offline option; it was not substituted.')
+
+
 def narration(script, voice, folder, warnings):
     if voice != 'local-en':
         audio, metadata = folder / 'voice.mp3', folder / 'speech.jsonl'
@@ -130,9 +154,10 @@ def narration(script, voice, folder, warnings):
             if not words or any(b['start'] < a['start'] for a, b in zip(words, words[1:])):
                 raise ValueError('Missing speech timings')
             return Narration(audio, duration, words, scenes_from_words(words, duration, script), True)
-        except Exception:
-            raise PipelineError('Natural voice or its timing service is unavailable. Retry Aria, Guy or Sonia. '
-                                'Local English is a separate robotic offline option; it was not substituted.') from None
+        except PipelineError:
+            raise
+        except Exception as error:
+            raise PipelineError(natural_voice_error(error)) from None
     binary = shutil.which('espeak-ng')
     if not binary:
         raise PipelineError('Local voice is unavailable. Install espeak-ng or use a working Edge voice.')

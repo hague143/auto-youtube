@@ -5,6 +5,7 @@ import wave
 from pathlib import Path
 
 import httpx
+import aiohttp
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
@@ -53,6 +54,22 @@ def test_natural_voice_failure_never_silently_uses_espeak(tmp_path, monkeypatch)
     assert 'sentinel-private' not in str(error.value)
     assert not (tmp_path / 'voice.wav').exists()
     assert not warnings
+
+
+@pytest.mark.parametrize(('status', 'message'), [(403, 'HTTP 403'), (429, 'rate limited'), (503, 'HTTP 503')])
+def test_voice_service_errors_report_status_without_request_secrets(tmp_path, monkeypatch, status, message):
+    import edge_tts
+    def unavailable(*args, **kwargs):
+        raise aiohttp.WSServerHandshakeError(None, (), status=status, message='sentinel-private-value')
+    monkeypatch.setattr(edge_tts, 'Communicate', unavailable)
+    with pytest.raises(pipeline.PipelineError, match=message) as error:
+        pipeline.narration('A short story.', 'en-US-AriaNeural', tmp_path, [])
+    assert 'sentinel-private' not in str(error.value)
+
+
+def test_voice_timeout_is_distinct_from_service_rejection():
+    assert 'timed out' in pipeline.natural_voice_error(TimeoutError('sentinel-private-value'))
+    assert 'sentinel-private' not in pipeline.natural_voice_error(TimeoutError('sentinel-private-value'))
 
 
 def test_natural_voice_preserves_provider_word_boundaries(tmp_path, monkeypatch):

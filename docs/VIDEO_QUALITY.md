@@ -24,3 +24,15 @@ curl --fail http://127.0.0.1:8000/health
 ```
 
 The update preserves `.env`, project data and Caddy certificate volumes. The Vercel frontend can keep its current deployment because its request fields remain compatible. Verify a new natural-voice stock video from the real Vercel site. Provider availability on Oracle must be tested there; a local test with mocked stock/speech services does not establish live provider access.
+
+## Natural voice connection errors
+
+The backend pins `edge-tts==7.3.1`. Compared with the previous 7.2.7 pin, upstream added support for the speech service's Sec-MS-GEC v2 protocol, corrected clock-skew date parsing and improved timing compensation. Sources: [upstream changes](https://github.com/rany2/edge-tts/compare/7.2.7...7.3.1) and [7.3.1 release](https://github.com/rany2/edge-tts/releases/tag/7.3.1). The update addresses an obsolete-client compatibility risk; it does not establish why a specific Oracle request failed.
+
+Use the update commands above to rebuild the backend; pulling source without rebuilding leaves the running container's old package installed. Check the actual running version with:
+
+```bash
+sudo docker compose -f compose.yaml -f compose.ip-https.yaml exec studio python -c 'import edge_tts; print(edge_tts.__version__)'
+```
+
+It should print `7.3.1`. Retry a short Aria narration. Errors now distinguish HTTP 403 rejection, HTTP 429 rate limiting, other HTTP failures, DNS lookup, timeout, connection failure and TLS verification. Only safe categories/status codes are exposed; raw provider exceptions, URLs and headers stay private. Aria, Guy and Sonia share a service endpoint, so switching the voice does not resolve a server-wide network or protocol failure. A continuing 403 needs actual Oracle diagnostics, including the installed version and synchronized server clock; do not assume that it proves an IP ban.

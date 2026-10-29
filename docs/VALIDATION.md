@@ -51,3 +51,10 @@ The user confirmed that the actual Oracle HTTPS `/health` endpoint returned `sta
 - A live Aria request in this cloud failed with `ClientConnectorDNSError`. Natural voice timing tests use explicit provider fixtures; live Edge speech and real Pexels/Gemini relevance must be checked on Oracle after updating. Optional Whisper was not installed or run.
 - Existing missing frontend files in the shared checkout were preserved. Validation used a source-only temporary copy of committed frontend files plus the changed backend/tests. This change does not remove frontend files or require a new Vercel build.
 - Existing upstream Starlette/AnyIO and MoviePy/NumPy deprecation warnings remain. No dependency versions or TLS verification settings were relaxed.
+
+## Edge connection compatibility — 2026-10-29
+
+- The user's Oracle render reported the previous generic natural-voice/timing failure. A subsequent direct SDK diagnostic on Oracle confirmed `WSServerHandshakeError`, **HTTP 403**, before the 7.3.1 upgrade. This establishes service rejection; it does not establish an Oracle IP block or prove the precise rejection reason.
+- The old `edge-tts==7.2.7` pin was upgraded to the maintainer's current `7.3.1` release. Upstream changes add the service's v2 connection protocol and fixes for clock-skew parsing and timing compensation. The existing voice/timing API remains compatible.
+- **20 backend tests passed**, including redacted HTTP 403/429/503 diagnostics, timeout classification, word-timing fixtures and the real stock-scene FFmpeg export. Docker built successfully; its installed Edge version was independently checked as **7.3.1**. The real browser/container render smoke passed with measured scene metadata, MP4 preview/download, persistence, mobile layout and deletion.
+- A live request with the new package in this cloud still failed at DNS lookup; the new diagnostic correctly identified that category without printing the raw exception. Live synthesis on Oracle remains unverified until the user rebuilds and retries there. A package update and passing fixtures are not proof of a successful Microsoft service connection.
