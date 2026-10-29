@@ -1,4 +1,10 @@
 # Browser-trusted IP certificate. Caddy 2.11+; requires public TCP 80/443.
+{
+	# Browsers omit SNI for IP addresses. Select the public IP certificate
+	# instead of trying to match the container's private listener address.
+	default_sni {$SITE_DOMAIN}
+}
+
 https://{$SITE_DOMAIN} {
 	tls {
 		issuer acme {

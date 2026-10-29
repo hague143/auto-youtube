@@ -42,7 +42,7 @@ Let’s Encrypt made six-day and public IP-address certificates generally availa
 - https://letsencrypt.org/2026/01/15/6day-and-ip-general-availability
 - https://caddyserver.com/docs/caddyfile/directives/tls#acme
 
-The optional `Caddyfile.ip` and `compose.ip-https.yaml` configure a pinned Caddy 2.11.7 image with the explicit Let's Encrypt issuer and shortlived profile, replacing the ordinary hostname Caddyfile. On the actual Oracle VM, once the application files have been transferred:
+The optional `Caddyfile.ip` and `compose.ip-https.yaml` configure a pinned Caddy 2.11.7 image with the explicit Let's Encrypt issuer and shortlived profile, replacing the ordinary hostname Caddyfile. The global `default_sni` selects the public IP certificate for browsers that omit SNI when opening an IP address. This is necessary behind Docker's port mapping, where Caddy's listener address is a private container IP. On the actual Oracle VM, once the application files have been transferred:
 
 1. Keep public TCP 80/443 ingress enabled. Set root `.env` `SITE_DOMAIN` to the VM's actual public IPv4, without a scheme or port, and set `STUDIO_CORS_ORIGINS` to include the actual Vercel frontend origin. Preserve the existing private server token.
 2. Stop only the temporary test container when ready to replace it: `sudo docker rm -f faceless-http-check`.
@@ -50,10 +50,14 @@ The optional `Caddyfile.ip` and `compose.ip-https.yaml` configure a pinned Caddy
 4. Inspect Caddy logs: `sudo docker compose -f compose.yaml -f compose.ip-https.yaml logs --tail 50 web`. Verify an ordinary HTTPS request to the actual public IP and `/health`, with certificate verification enabled. Do not use `curl -k` or browser certificate exceptions.
 5. Only after certificate issuance succeeds, use that HTTPS IP origin as `STUDIO_BACKEND_URL` in Vercel or enter it in Settings. Test authentication, CORS and one real render from the real Vercel site.
 
+For an existing deployment, fetch the updated `Caddyfile.ip` and run `sudo docker compose -f compose.yaml -f compose.ip-https.yaml exec web caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile`. This preserves the running backend, projects and certificate volumes. A `certificate obtained successfully` log confirms issuance; also verify an ordinary HTTPS request to the IP, because issuance alone does not test certificate selection for clients without SNI.
+
 No public certificate has been requested or issued by this cloud session. Config validation is separate from successful issuance on Oracle. The VM must remain reachable for automatic renewal; IP certificates are short-lived, about six days. Caddy's certificate data/config volumes must persist. If the public IP changes, update SITE_DOMAIN and the frontend backend URL, and obtain/validate the certificate for the new IP. A reserved public IP is useful when keeping a fixed backend address.
 
 DuckDNS is not required for this configuration. A regular hostname remains another supported option. Do not assume that typing `https://` before an IP makes it trusted, or accept a self-signed certificate as a public deployment.
 
 ## Checks and limits
+
+`python3 scripts/check_ip_https.py` checks IP certificate selection using the pinned Caddy image and an isolated local test CA. It reproduces the missing-SNI failure without the default, verifies a successful TLS handshake with the default, and rejects a certificate for a different IP. It does not contact an ACME server or issue a public certificate.
 
 `npm run test:build` exercises frontend-only packaging and public config validation. `npm run build` prepares a static export. Browser checks for the static export must verify that API requests go to the configured backend, not `/api` on Vercel. Actual Vercel deployment, Oracle HTTPS, real CORS and serverless-provider plan quotas remain separate checks. The application still has a single private owner; this change does not add public user accounts or Play Store release readiness.
