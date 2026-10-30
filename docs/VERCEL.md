@@ -1,6 +1,6 @@
 # Vercel frontend + Oracle rendering backend
 
-Vercel hosts the static browser interface. Oracle runs FFmpeg/MoviePy, voice generation, persistent output files and the in-process render queue. This backend is not a Vercel Function: its work continues outside individual HTTP requests and needs persistent storage.
+Vercel hosts the static browser interface. Oracle runs FFmpeg, voice generation, persistent output files and the in-process render queue. This backend is not a Vercel Function: its work continues outside individual HTTP requests and needs persistent storage.
 
 ## Frontend deployment
 
@@ -19,7 +19,7 @@ The isolated web project has its own package.json, lockfile, build script and ve
 
 If a prior deployment used the repository root and failed while installing pydantic-core on Python 3.14, change Settings → Build and Deployment → Root Directory to `web`, save, and redeploy the latest main commit containing this directory. The earlier root deployment tried to install Oracle-only Python dependencies. The solution is project isolation; no Python ABI compatibility override or backend dependency upgrade is needed for the static frontend.
 
-The UI opens before a backend is connected. Generation requires the backend. Settings allows a trusted HTTPS server origin and private access token. Credentials and a runtime-entered URL remain only in this page session and clear on refresh; a public build-time backend origin can be restored automatically on page load. The self-hosted Docker version defaults to its own origin as before.
+The UI opens before a backend is connected. Generation requires the backend. Settings allows a trusted HTTPS server origin and private access token. Press Save settings to persist the runtime URL, token, provider keys and Voice ID in encrypted browser IndexedDB. Refreshing or reopening the same site restores them and reconnects the private library. Creation preferences are saved after changes. Each browser profile/origin has its own settings; clearing site data or closing an incognito profile removes them. The browser profile can use the saved credentials. Clear saved settings deletes the record. No runtime keys enter the Vercel build or public config. The self-hosted Docker version defaults to its own origin as before.
 
 ## Backend connection
 

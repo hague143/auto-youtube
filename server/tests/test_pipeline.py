@@ -39,7 +39,7 @@ def test_long_sentences_keep_all_words_and_short_shots():
              for index, token in enumerate(text.split())]
     scenes = scenes_from_words(words, 20, text)
     assert ' '.join(scene['text'] for scene in scenes) == text
-    assert all(scene['end'] - scene['start'] <= 4.5 for scene in scenes)
+    assert all(scene['end'] - scene['start'] <= 12 for scene in scenes)
     assert all(a['end'] == b['start'] for a, b in zip(scenes, scenes[1:]))
 
 

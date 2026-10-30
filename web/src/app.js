@@ -16,13 +16,28 @@
   const publicConfig=window.STUDIO_CONFIG||{};
   const defaultServer=publicConfig.backendUrl||(publicConfig.frontendOnly?'':location.origin);
   let state={server:defaultServer,token:'',keys:{},elevenlabsVoiceId:defaultElevenVoice}, projects=[], active='', videoUrl='', pollBusy=false;
-  let session=0, librarySignature='', detailSignature='';
+  let session=0, librarySignature='', detailSignature='', ready=false, saved=false;
   const covers=new Map(), pendingCovers=new Map();
   $('server').value=defaultServer;
   $('keys').innerHTML=providers.map(([id,name,help,url,mark]) =>
     '<div class="provider-field" data-provider="'+id+'"><div class="provider-heading"><span class="provider-avatar" aria-hidden="true">'+mark+'</span><div><strong>'+name+'</strong><small>'+help+'</small></div><a href="'+url+'" target="_blank" rel="noreferrer noopener">Get key '+icon('arrow')+'</a></div><label for="key-'+id+'">'+name+' API key</label><div class="key-row"><input id="key-'+id+'" type="password" autocomplete="off" placeholder="Paste your '+name+' key"><button type="button" data-test="'+id+'" aria-label="Test '+name+' key">Test</button></div>'+
     (id==='elevenlabs'?'<label for="elevenlabs-voice">ElevenLabs Voice ID</label><input id="elevenlabs-voice" list="elevenlabs-voices" maxlength="80" autocomplete="off" value="'+defaultElevenVoice+'"><datalist id="elevenlabs-voices"></datalist><p class="field-note">Test your key to load your account’s voices, or paste a Voice ID. Your ElevenLabs plan and credits apply.</p>':'')+'</div>'
   ).join('');
+  const preferenceIds=['format','duration','voice','visuals','captions'];
+  const defaults=Object.fromEntries(preferenceIds.map(id=>[id,$(id).value]));
+  const preferences=()=>({...Object.fromEntries(preferenceIds.map(id=>[id,$(id).value])),thumbnail:$('thumbnail').checked});
+  function restorePreferences(value={}){
+    preferenceIds.forEach(id=>{if(Array.from($(id).options).some(option=>option.value===String(value[id])))$(id).value=String(value[id])});
+    $('thumbnail').checked=value.thumbnail===true;
+  }
+  async function savePreferences(){
+    if(!saved||!ready)return;
+    try{await window.STUDIO_SETTINGS.save({...state,preferences:preferences()})}
+    catch{saved=false;notify('Your changes work for this session, but browser storage could not save them. Open Settings and save again.',true)}
+  }
+  function queuePreferences(){savePreferences()}
+  function timeLabel(value){const n=Math.max(0,Math.round(Number(value)||0));return n<60?n+'s':Math.floor(n/60)+'m'+(n%60?' '+n%60+'s':'')}
+  function safeSource(value){return /^https:\/\/(www\.)?(pexels|pixabay)\.com\//.test(value||'')}
 
   function notify(text,error=false){
     const message=$('message');message.textContent=text;message.className=error?'error':'ok';message.hidden=false;
@@ -53,7 +68,7 @@
     if(!settings.token)throw Error('Add your server access token in Settings.');
     const origin=serverOrigin(settings.server);
     let response;
-    try{response=await fetch(origin+path,{method,headers:{Authorization:'Bearer '+settings.token,...(body?{'Content-Type':'application/json'}:{})},body:body?JSON.stringify(body):undefined,signal:AbortSignal.timeout(file?120000:30000),cache:'no-store',redirect:'error'})}
+    try{response=await fetch(origin+path,{method,headers:{Authorization:'Bearer '+settings.token,...(body?{'Content-Type':'application/json'}:{})},body:body?JSON.stringify(body):undefined,signal:AbortSignal.timeout(file?600000:30000),cache:'no-store',redirect:'error'})}
     catch{connection(false);throw Error('Cannot connect. Check backend HTTPS, connection, and CORS permission for this app’s origin.')}
     if(!response.ok){if(response.status===401)connection(false);const data=await response.json().catch(()=>({}));throw Error(typeof data.detail==='string'?data.detail:'Server returned HTTP '+response.status)}
     return file?response.blob():response.status===204?null:response.json();
@@ -92,7 +107,7 @@
         const status=['queued','running','complete','failed'].includes(p.status)?p.status:'queued';
         const label={queued:'Queued',running:'Rendering',complete:'Ready to share',failed:'Needs attention'}[status];
         const aspect=(formats[p.format]||formats.portrait)[0];
-        return '<button class="project" data-open="'+esc(p.id)+'"><div class="project-cover">'+(p.status==='complete'?'<img data-cover="'+esc(p.id)+'" alt="" loading="lazy">':'')+'<span class="project-format">'+aspect+'</span><span class="project-cover-title">'+esc(p.title)+'</span></div><div class="project-body"><strong>'+esc(p.title)+'</strong><div class="project-info"><span class="status-pill '+status+'">'+label+'</span><span>'+esc(p.duration)+'s · MP4</span></div>'+(['queued','running'].includes(p.status)?'<progress aria-label="Rendering progress" max="100" value="'+(Number(p.progress)||0)+'"></progress>':'')+'</div></button>';
+        return '<button class="project" data-open="'+esc(p.id)+'"><div class="project-cover">'+(p.status==='complete'?'<img data-cover="'+esc(p.id)+'" alt="" loading="lazy">':'')+'<span class="project-format">'+aspect+'</span><span class="project-cover-title">'+esc(p.title)+'</span></div><div class="project-body"><strong>'+esc(p.title)+'</strong><div class="project-info"><span class="status-pill '+status+'">'+label+'</span><span>'+timeLabel(p.duration)+' · MP4</span></div>'+(['queued','running'].includes(p.status)?'<progress aria-label="Rendering progress" max="100" value="'+(Number(p.progress)||0)+'"></progress>':'')+'</div></button>';
       }).join(''):emptyState(Boolean(state.token));
     }
     $('library-count').textContent=state.token?String(projects.length):'—';
@@ -112,12 +127,14 @@
     active=project.id;detailSignature=JSON.stringify(project);$('detail').hidden=false;
     const complete=project.status==='complete',failed=project.status==='failed';
     const credits=(project.credits||[]).map(c=>'<p>'+esc(c.provider)+' · '+esc(c.creator)+' '+(/^https:\/\/(www\.)?(pexels|pixabay)\.com\//.test(c.url)?'<a href="'+esc(c.url)+'" target="_blank" rel="noreferrer noopener">Source ↗</a>':'')+'</p>').join('');
-    $('detail').innerHTML='<div class="row"><div><span class="detail-eyebrow">'+(complete?'YOUR FINISHED STORY':failed?'PROJECT DETAILS':'BRINGING YOUR IDEA TO LIFE')+'</span><h2>'+esc(project.title)+'</h2></div><button data-close="1">Close</button></div><div class="detail-stage">'+icon('clock')+esc(project.stage)+' · '+esc(project.duration)+'s</div>'+
+    const timeline=(project.scenes||[]).map(scene=>'<li><strong>'+timeLabel(scene.start)+'–'+timeLabel(scene.end)+'</strong><p>'+esc(scene.text)+'</p><small>'+esc(scene.query)+' · '+esc(scene.source)+' · '+esc(scene.media_kind||'media')+'</small>'+(safeSource(scene.source_url)?' <a href="'+esc(scene.source_url)+'" target="_blank" rel="noreferrer noopener">View source ↗</a>':'')+'</li>').join('');
+    $('detail').innerHTML='<div class="row"><div><span class="detail-eyebrow">'+(complete?'YOUR FINISHED STORY':failed?'PROJECT DETAILS':'BRINGING YOUR IDEA TO LIFE')+'</span><h2>'+esc(project.title)+'</h2></div><button data-close="1">Close</button></div><div class="detail-stage">'+icon('clock')+esc(project.stage)+' · '+timeLabel(project.duration)+'</div>'+
       (project.error?'<p class="detail-error">'+esc(project.error)+'</p>':'')+
       (project.warnings||[]).map(w=>'<p class="detail-warning">'+esc(w)+'</p>').join('')+
       (complete?'<div id="player"></div><div class="detail-actions"><button class="primary" data-artifact="preview">'+icon('video')+' Preview</button><button data-artifact="video.mp4">'+icon('download')+' Download MP4</button><button data-artifact="thumbnail.jpg">'+icon('image')+' Cover</button>'+(project.caption_mode!=='none'?'<button data-artifact="captions.srt">'+icon('download')+' Captions</button>':'')+'</div>':
       !failed?'<div class="render-state"><div class="render-orb" aria-hidden="true"></div><div><strong>'+esc(project.stage)+'</strong><p>Your server is working on your video.</p><progress aria-label="Rendering progress" max="100" value="'+(Number(project.progress)||0)+'"></progress></div></div>':'')+
       (project.script?'<details><summary>Voiceover script</summary><pre>'+esc(project.script)+'</pre></details>':'')+
+      (timeline?'<details><summary>Scene timeline · '+(project.scenes||[]).length+' scenes</summary><ol class="scene-timeline">'+timeline+'</ol></details>':'')+
       '<details><summary>Media credits</summary>'+(credits||'<p>Studio backgrounds and your narration. No stock-media credits.</p>')+'</details>'+
       ((complete||failed)?'<button class="danger" data-delete="1">Delete project and files</button>':'');
   }
@@ -125,17 +142,17 @@
     const topic=$('topic').value.trim(),words=$('script').value.trim().split(/\s+/).filter(Boolean);
     const [aspect,name]=formats[$('format').value]||formats.portrait;
     $('topic-count').textContent=$('topic').value.length+' / 180';
-    $('script-count').textContent=words.length+' words'+(words.length?' · ~'+Math.ceil(words.length/2.5)+'s narration':'');
+    $('script-count').textContent=words.length+' words'+(words.length?' · ~'+timeLabel(Math.ceil(words.length/2.5))+' narration':'');
     $('preview-title').textContent=topic?topic.slice(0,100):'A little idea.\nA whole new world.';
     $('preview-poster').dataset.format=$('format').value;
     $('preview-format-tag').textContent=aspect;
     $('preview-aspect').textContent=aspect+' · '+name;
-    $('preview-length').textContent=$('duration').value+'s';
+    $('preview-length').textContent=timeLabel($('duration').value);
     $('preview-caption').hidden=$('captions').value==='none';
     $('preview-caption').textContent=words.length?words.slice(0,9).join(' '):'Your captions will appear here';
     $('recipe-voice').textContent=$('voice').selectedOptions[0].textContent.split('·')[0].trim();
     $('recipe-visuals').textContent=$('visuals').value==='studio'?'Studio backgrounds':'Stock media';
-    $('recipe-duration').textContent=$('duration').value+' seconds';
+    $('recipe-duration').textContent=timeLabel($('duration').value)+' maximum';
   }
   function goToComposer(){
     $('create-form').scrollIntoView({behavior:reducedMotion.matches?'instant':'smooth',block:'start'});
@@ -154,7 +171,7 @@
         const voices=result.voices.filter(voice=>voice&&typeof voice.id==='string'&&/^[A-Za-z0-9_-]{1,80}$/.test(voice.id));
         $('elevenlabs-voices').innerHTML=voices.map(voice=>'<option value="'+esc(voice.id)+'">'+esc(voice.name)+'</option>').join('');
         if(voices.length&&$('elevenlabs-voice').value===defaultElevenVoice&&!voices.some(voice=>voice.id===defaultElevenVoice))$('elevenlabs-voice').value=voices[0].id;
-        notify('ElevenLabs key accepted. '+voices.length+' voices loaded. Apply settings to use your selected Voice ID.');
+        notify('ElevenLabs key accepted. '+voices.length+' voices loaded. Save settings to use your selected Voice ID.');
       }else notify('Key accepted. Generation still depends on model access and quota.');
     });
     if(button.dataset.artifact)await run(button,async()=>{
@@ -174,30 +191,36 @@
     });
   });
   $('settings-form').addEventListener('submit',event=>{
-    event.preventDefault();try{const next=draft();if(!next.token)throw Error('Enter your server access token.');state=next;clearCovers();projects=[];active='';$('detail').hidden=true;stopVideo();
-    notify('Settings applied for this page session.');load().catch(error=>notify(error.message,true));}catch(error){notify(error.message,true)}
+    event.preventDefault();if(!ready)return;run($('save-settings'),async()=>{
+      const next=draft();if(!next.token)throw Error('Enter your server access token.');
+      await window.STUDIO_SETTINGS.save({...next,preferences:preferences()});
+      state=next;saved=true;clearCovers();projects=[];active='';$('detail').hidden=true;stopVideo();
+      notify('Settings saved in this browser. Refreshing will keep your keys and preferences.');load().catch(error=>notify(error.message,true));
+    });
   });
   $('connect').addEventListener('click',()=>run($('connect'),async()=>{
     const result=await call('/api/capabilities','GET',undefined,draft());
     if(!result.ffmpeg)throw Error('Connected, but FFmpeg is missing.');
-    connection(true);notify('Connected · FFmpeg ready'+(result.local_voice?' · Local voice ready':'')+'. Apply settings to use this connection.');
+    connection(true);notify('Connected · FFmpeg ready'+(result.local_voice?' · Local voice ready':'')+'. Save settings to use this connection.');
   }));
   $('reveal').addEventListener('change',()=>['token',...providers.map(([id])=>'key-'+id)].forEach(id=>$(id).type=$('reveal').checked?'text':'password'));
-  $('clear').addEventListener('click',()=>{
+  $('clear').addEventListener('click',()=>run($('clear'),async()=>{
+    await window.STUDIO_SETTINGS.clear();saved=false;
     state={server:defaultServer,token:'',keys:{},elevenlabsVoiceId:defaultElevenVoice};clearCovers();$('settings-form').reset();$('server').value=defaultServer;$('elevenlabs-voices').replaceChildren();
     ['token',...providers.map(([id])=>'key-'+id)].forEach(id=>{$(id).value='';$(id).type='password'});
     projects=[];active='';$('detail').hidden=true;stopVideo();connection(false);
-    $('projects').innerHTML=emptyState(false);$('library-count').textContent='—';notify('Credentials cleared.');
-  });
+    restorePreferences(defaults);updatePreview();$('projects').innerHTML=emptyState(false);$('library-count').textContent='—';notify('Saved settings and credentials cleared from this browser.');
+  }));
   $('refresh').addEventListener('click',()=>run($('refresh'),load));
   $('start-creating').addEventListener('click',goToComposer);
   $('sample-script').addEventListener('click',()=>{
     $('topic').value='The power of a small idea';
     $('script').value='Every great story starts with a small idea. Write it down. Explore a new angle. Take one small step today, and see where your curiosity leads.';
     $('voice').value='local-en';$('visuals').value='studio';$('duration').value='15';$('captions').value='script';$('thumbnail').checked=false;
-    updatePreview();goToComposer();notify(state.token?'Sample story added. Your video is ready to create.':'Sample story added. Connect your server in Settings before creating.');
+    updatePreview();queuePreferences();goToComposer();notify(state.token?'Sample story added. Your video is ready to create.':'Sample story added. Connect your server in Settings before creating.');
   });
   ['topic','script','format','duration','voice','visuals','captions'].forEach(id=>$(id).addEventListener('input',updatePreview));
+  [...preferenceIds,'thumbnail'].forEach(id=>$(id).addEventListener('change',queuePreferences));
   $('create-form').addEventListener('submit',event=>{
     event.preventDefault();
     if(!state.token){tab('settings');notify('Add your private server access token first.',true);$('token').focus();return}
@@ -208,6 +231,9 @@
       if(body.voice==='elevenlabs'&&!/^[A-Za-z0-9_-]{1,80}$/.test(body.elevenlabs_voice_id))throw Error('Enter a valid ElevenLabs Voice ID in Settings.');
       if(body.visuals==='stock'&&!state.keys.pexels&&!state.keys.pixabay)throw Error('Add a stock key or choose Studio backgrounds.');
       if(body.thumbnail&&!state.keys.huggingface)throw Error('Add a Hugging Face token or disable AI cover.');
+      const capabilities=await call('/api/capabilities');
+      if(body.duration>Number(capabilities.max_duration||60))throw Error('This backend supports up to '+timeLabel(capabilities.max_duration||60)+'. Update your Oracle backend before creating a longer video.');
+      await savePreferences();
       const project=await call('/api/projects','POST',body);active=project.id;projects=[project,...projects.filter(p=>p.id!==project.id)];
       tab('library');renderLibrary();notify('Your video is rendering on your server.');
     });
@@ -226,5 +252,21 @@
     reducedMotion.addEventListener('change',reset);
   });
   updatePreview();
-  setInterval(()=>{if(!document.hidden)load().catch(()=>{})},4000);
+  $('settings-form').inert=true;$('generate').disabled=true;
+  (async()=>{
+    try{
+      const stored=await window.STUDIO_SETTINGS.load();
+      if(stored){
+        const server=serverOrigin(stored.server);
+        if(typeof stored.token!=='string'||!stored.token||stored.token.length>8192)throw Error('Saved settings are invalid. Clear saved settings and enter them again.');
+        state={server,token:stored.token,keys:Object.fromEntries(providers.map(([id])=>[id,typeof stored.keys?.[id]==='string'?stored.keys[id].slice(0,8192):''])),elevenlabsVoiceId:/^[A-Za-z0-9_-]{1,80}$/.test(stored.elevenlabsVoiceId)?stored.elevenlabsVoiceId:defaultElevenVoice};
+        $('server').value=state.server;$('token').value=state.token;
+        providers.forEach(([id])=>{$('key-'+id).value=state.keys[id]});$('elevenlabs-voice').value=state.elevenlabsVoiceId;
+        restorePreferences(stored.preferences);saved=true;updatePreview();
+        load().catch(error=>notify(error.message,true));
+      }
+    }catch(error){notify(error.message||'Saved settings could not be loaded.',true)}
+    finally{ready=true;$('settings-form').inert=false;$('generate').disabled=false;document.documentElement.dataset.settingsReady='true'}
+  })();
+  setInterval(()=>{if(ready&&!document.hidden)load().catch(()=>{})},4000);
 })();

@@ -40,7 +40,7 @@ def test_ui_and_no_request_value_echo(client):
     result = client.post('/api/projects', headers=AUTH, json={'topic': secret, 'duration': 999, 'keys': {'gemini': secret}})
     assert result.status_code == 422
     assert secret not in result.text
-    assert client.post('/api/projects', headers=AUTH, content=b'x' * 48001).status_code == 413
+    assert client.post('/api/projects', headers=AUTH, content=b'x' * 128001).status_code == 413
 
 
 def test_provider_requirements_and_download_allowlist(client):

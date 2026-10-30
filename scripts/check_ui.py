@@ -42,7 +42,7 @@ with sync_playwright() as playwright:
             assert page.locator('#preview-poster').get_attribute('data-format') == 'landscape'
             assert page.locator('#preview-format-tag').inner_text() == '16:9'
             page.locator('#duration').select_option('60')
-            assert page.locator('#recipe-duration').inner_text() == '60 seconds'
+            assert page.locator('#recipe-duration').inner_text() == '1m maximum'
             page.locator('#captions').select_option('none')
             assert page.locator('#preview-caption').is_hidden()
             page.get_by_role('button', name='Use a sample story', exact=False).click()
@@ -69,20 +69,23 @@ with sync_playwright() as playwright:
             page.get_by_role('button', name='Test connection', exact=True).click()
             page.get_by_role('status').filter(has_text='Local voice ready').wait_for()
             assert page.locator('#connection-label').inner_text() == 'Server connected'
-            page.get_by_role('button', name='Apply settings', exact=False).click()
+            page.get_by_role('button', name='Save settings', exact=False).click()
+            page.get_by_role('status').filter(has_text='Settings saved in this browser').wait_for()
             assert page.evaluate('document.documentElement.scrollWidth <= innerWidth'), f'Settings overflow at {width}'
             if width in (1440, 390):
                 # Clear secrets before screenshots, even though they are only test fixtures.
-                page.get_by_role('button', name='Clear credentials', exact=True).click()
+                page.get_by_role('button', name='Clear saved settings', exact=True).click()
+                page.get_by_role('status').filter(has_text='cleared from this browser').wait_for()
                 page.locator('#message').evaluate('(element) => element.hidden = true')
                 page.evaluate('window.scrollTo(0, 0)')
                 page.screenshot(path=str(OUTPUT / f'ui-settings-{width}.png'), full_page=True, animations='disabled')
             page.reload()
+            page.wait_for_function('document.documentElement.dataset.settingsReady === "true"')
             page.get_by_role('button', name='Settings', exact=True).click()
-            assert page.locator('#token').input_value() == ''
+            assert page.locator('#token').input_value() == ('' if width in (1440,390) else 'test-only-ui-fixture')
             assert not external, external
             assert not errors, errors
-            print(f'UI passed at {width}px: live preview, sample story, safe text, navigation, keys, connection, refresh clearing, no overflow/external dependencies.')
+            print(f'UI passed at {width}px: live preview, sample story, safe text, navigation, keys, connection, saved settings, no overflow/external dependencies.')
             page.close()
 
         page = browser.new_page(viewport={'width': 1440, 'height': 1000})

@@ -128,7 +128,7 @@ def test_render_finishes_with_photos_or_cards_when_stock_cannot_fit(tmp_path, mo
     scenes = [{'text': 'Rockets.', 'start': 0, 'end': 1}, {'text': 'Coral.', 'start': 1, 'end': 2}]
     words = [{'text': 'Rockets.', 'start': .1, 'end': .8}, {'text': 'Coral.', 'start': 1.1, 'end': 1.8}]
     monkeypatch.setattr(pipeline, 'narration', lambda *args: pipeline.Narration(audio, 2, words, scenes, True))
-    monkeypatch.setattr(pipeline, 'stock_budget', lambda folder: {
+    monkeypatch.setattr(pipeline, 'stock_budget', lambda folder, duration=30: {
         'remaining': 0 if exhausted else 30000, 'asset_limit': 5000, 'image_reserve': 16000})
     photo = io.BytesIO()
     Image.new('RGB', (64, 64), 'blue').save(photo, format='JPEG')

@@ -44,8 +44,8 @@ class Keys(BaseModel):
 
 class CreateVideo(BaseModel):
     topic: str = Field(min_length=3, max_length=180)
-    script: str = Field(default='', max_length=6000)
-    duration: Literal[15, 30, 60] = 30
+    script: str = Field(default='', max_length=20000)
+    duration: Literal[15, 30, 60, 120, 300, 600, 900] = 30
     format: Literal['portrait', 'landscape', 'square'] = 'portrait'
     voice: Literal['elevenlabs', 'en-US-AriaNeural', 'en-US-GuyNeural', 'en-GB-SoniaNeural', 'en-IN-NeerjaNeural', 'local-en'] = 'en-US-AriaNeural'
     elevenlabs_voice_id: str = Field(default='JBFqnCBsd6RMkjVDRZzb', min_length=1, max_length=80,
@@ -113,7 +113,7 @@ async def headers_and_limits(request: Request, call_next):
         chunks, size = [], 0
         async for chunk in request.stream():
             size += len(chunk)
-            if size > 48000:
+            if size > 128000:
                 return JSONResponse({'detail': 'Request too large.'}, status_code=413)
             chunks.append(chunk)
         request._body = b''.join(chunks)
@@ -138,7 +138,7 @@ def health():
 def capabilities():
     import importlib.util
     return {'ffmpeg': bool(shutil.which('ffmpeg')), 'local_voice': bool(shutil.which('espeak-ng')),
-            'whisper': importlib.util.find_spec('whisper') is not None, 'max_duration': 60}
+            'whisper': importlib.util.find_spec('whisper') is not None, 'max_duration': 900}
 
 
 @app.post('/api/verify-key', dependencies=[Depends(auth)])
@@ -210,8 +210,9 @@ async def create(data: CreateVideo):
             raise HTTPException(409, 'A video is already rendering. Wait for it to finish.')
         if len(JOBS) >= 50:
             raise HTTPException(409, 'Delete old projects first. Library limit is 50.')
-        if shutil.disk_usage(DATA).free < 1024 ** 3:
-            raise HTTPException(507, 'Server storage is low. Delete old videos.')
+        required = 1024 ** 3 + max(0, data.duration - 60) * 2 * 1024 ** 2
+        if shutil.disk_usage(DATA).free < required:
+            raise HTTPException(507, 'Server storage is low for this video length. Delete old projects or choose a shorter target.')
         job_id = secrets.token_hex(12)
         job = dict(id=job_id, title=data.topic.strip(), status='queued', stage='Queued', progress=0,
                    duration=data.duration, format=data.format, caption_mode=data.captions, script='',

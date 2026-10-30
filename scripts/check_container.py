@@ -19,7 +19,7 @@ environment['STUDIO_ACCESS_TOKEN'] = token
 started = False
 try:
     subprocess.run(['docker', 'run', '--rm', '-d', '--name', name, '-p', '127.0.0.1:18000:8000',
-                    '-e', 'STUDIO_ACCESS_TOKEN', 'faceless-studio:oracle-test'],
+                    '-e', 'STUDIO_ACCESS_TOKEN', os.getenv('STUDIO_TEST_IMAGE', 'faceless-studio:oracle-test')],
                    env=environment, check=True, capture_output=True, text=True)
     started = True
     for attempt in range(40):
@@ -41,13 +41,15 @@ try:
             errors = []
             page.on('pageerror', lambda error: errors.append(str(error)))
             page.goto('http://127.0.0.1:18000')
+            page.wait_for_function('document.documentElement.dataset.settingsReady === "true"')
             page.get_by_role('button', name='Settings', exact=True).click()
             for provider in ('Gemini', 'ElevenLabs', 'Pexels', 'Pixabay', 'Hugging Face'):
                 assert page.get_by_label(provider + ' API key', exact=False).get_attribute('type') == 'password'
             page.locator('#token').fill(token)
             page.get_by_role('button', name='Test connection', exact=True).click()
             page.get_by_role('status').filter(has_text='Local voice ready').wait_for()
-            page.get_by_role('button', name='Apply settings', exact=True).click()
+            page.get_by_role('button', name='Save settings', exact=True).click()
+            page.get_by_role('status').filter(has_text='Settings saved in this browser').wait_for()
             page.get_by_role('button', name='Create', exact=True).click()
             page.locator('#voice').select_option('local-en')
             page.locator('#topic').fill('A small idea')
@@ -75,10 +77,9 @@ try:
             assert ' '.join(scene['text'] for scene in scenes) == project['script']
             page.screenshot(path=str(output / 'validated-desktop.png'), full_page=True)
             page.reload()
+            page.wait_for_function('document.documentElement.dataset.settingsReady === "true"')
             page.get_by_role('button', name='Settings', exact=True).click()
-            assert page.locator('#token').input_value() == ''
-            page.locator('#token').fill(token)
-            page.get_by_role('button', name='Apply settings', exact=True).click()
+            assert page.locator('#token').input_value() == token
             page.get_by_role('button', name='My videos', exact=True).click()
             page.get_by_role('button', name='A small idea', exact=False).wait_for()
             page.set_viewport_size({'width': 390, 'height': 844})
@@ -90,7 +91,7 @@ try:
             page.get_by_role('button', name='Delete project and files', exact=True).click()
             page.get_by_role('status').filter(has_text='Project deleted.').wait_for()
             assert not errors, errors
-            print('Container + browser smoke passed: auth, settings, real eSpeak narration, measured scene timeline, MoviePy/FFmpeg MP4, preview, download, refresh credential clearing, persistent project list, mobile layout, deletion.')
+            print('Container + browser smoke passed: auth, settings, real eSpeak narration, measured scene timeline, sequential FFmpeg MP4, preview, download, refresh credential persistence, persistent project list, mobile layout, deletion.')
             print('Export duration:', metadata['format']['duration'])
         finally:
             browser.close()

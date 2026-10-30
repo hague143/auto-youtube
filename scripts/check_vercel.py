@@ -76,7 +76,8 @@ try:
         page.get_by_role('button', name='Test ElevenLabs key', exact=True).click()
         page.get_by_role('status').filter(has_text='ElevenLabs key accepted').wait_for()
         assert page.get_by_label('ElevenLabs Voice ID', exact=True).input_value() == 'fixtureVoice'
-        page.get_by_role('button', name='Apply settings', exact=False).click()
+        page.get_by_role('button', name='Save settings', exact=False).click()
+        page.get_by_role('status').filter(has_text='Settings saved in this browser').wait_for()
         page.get_by_role('button', name='Create', exact=True).click()
         assert page.locator('#voice').input_value() == 'elevenlabs'
         page.locator('#topic').fill(fixture['title'])
@@ -89,13 +90,14 @@ try:
         assert requests and all(url.startswith('https://backend.example/api/') for url in requests)
         assert not same_origin_api
         page.reload()
+        page.wait_for_function('document.documentElement.dataset.settingsReady === "true"')
         page.get_by_role('button', name='Settings', exact=True).click()
-        assert page.locator('#token').input_value() == ''
-        assert page.get_by_label('ElevenLabs API key', exact=True).input_value() == ''
-        assert page.locator('#server').input_value() == ''
+        assert page.locator('#token').input_value() == 'test-only-vercel-fixture'
+        assert page.get_by_label('ElevenLabs API key', exact=True).input_value() == 'test-only-elevenlabs-key'
+        assert page.locator('#server').input_value() == 'https://backend.example'
         assert not errors, errors
         browser.close()
-        print('Vercel static export browser check passed: ElevenLabs key test, account Voice ID selection, separate HTTPS backend, bearer auth, create/status, MP4 download, insecure endpoint rejection, session clearing; no API calls to the frontend origin.')
+        print('Vercel static export browser check passed: ElevenLabs key test, account Voice ID selection, separate HTTPS backend, bearer auth, create/status, MP4 download, insecure endpoint rejection, persistent browser settings; no API calls to the frontend origin.')
 finally:
     server.shutdown()
     server.server_close()

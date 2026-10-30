@@ -6,6 +6,7 @@
 !server/main.py
 !server/pipeline.py
 !server/timeline.py
+!server/encoder.py
 !web/
 !web/src/
 !web/src/**

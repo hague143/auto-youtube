@@ -11,3 +11,5 @@
 .preview-title strong{white-space:pre-line}button[aria-busy=true]{cursor:wait}button[aria-busy=true]>.icon{opacity:.6}.diagonal-arrow{rotate:-45deg}.suggestions .icon,.text-button .icon,.provider-heading a .icon{width:10px;height:10px}.provider-heading a{display:inline-flex;gap:4px;align-items:center}.provider-heading a .icon{rotate:-45deg}.skip-link{opacity:0;pointer-events:none;transition:none}.skip-link:focus{opacity:1;pointer-events:auto}
 @media(max-width:590px){input,textarea{font-size:16px}.form-section .field select{font-size:13px}.field-count{font-size:9px}.suggestions button{min-height:32px;font-size:8px}}
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*:before,*:after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+
+.long-form-note{padding:0 24px 12px}.scene-timeline{padding-left:24px}.scene-timeline li{padding:12px 0;border-bottom:1px solid var(--border);overflow-wrap:anywhere}.scene-timeline p{margin:6px 0}.scene-timeline small{color:var(--muted)}

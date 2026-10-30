@@ -2,8 +2,8 @@
 import math
 import re
 
-MAX_SCENE_WORDS = 10
-MAX_SCENE_SECONDS = 4.5
+MAX_SCENE_WORDS = 24
+MAX_SCENE_SECONDS = 12
 STOP_WORDS = set('a an the and or but if so as at by for from in into of on to with '
                  'is are was were be been being it its this that these those '
                  'i we you they he she our your their his her them us my '
@@ -15,7 +15,7 @@ STOP_WORDS = set('a an the and or but if so as at by for from in into of on to w
 def split_script(script):
     """Keep sentence changes; split long sentences into short visual beats."""
     beats = []
-    for sentence in re.split(r'(?<=[.!?;])\s+', script.strip()):
+    for sentence in re.split(r'(?<=[.!?;])\s+|\n+', script.strip()):
         words = sentence.split()
         for offset in range(0, len(words), MAX_SCENE_WORDS):
             beats.append(' '.join(words[offset:offset + MAX_SCENE_WORDS]))
@@ -86,7 +86,10 @@ def scenes_from_words(words, duration, script=''):
                     boundaries.pop(0)
     scenes, group, start = [], [], 0.0
     for index, word in enumerate(words):
-        if group and (index in breaks or word['end'] - start > MAX_SCENE_SECONDS or len(group) >= MAX_SCENE_WORDS):
+        # Normalized TTS can spell "12" as "twelve", so exact script matching
+        # is not always possible. Preserve punctuation in the spoken transcript.
+        spoken_break = index > 0 and re.search(r'[.!?;]["\')\]]*$', words[index - 1]['text'])
+        if group and (index in breaks or spoken_break or word['end'] - start > MAX_SCENE_SECONDS or len(group) >= MAX_SCENE_WORDS):
             scenes.append({'text': ' '.join(item['text'] for item in group),
                            'start': start, 'end': word['start']})
             group, start = [], word['start']
